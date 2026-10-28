@@ -1,0 +1,17 @@
+# Réglages utilisés par la CLI Supabase (supabase functions deploy).
+# Depuis le dashboard, appliquer les mêmes réglages « Verify JWT » à la main.
+project_id = "demelo"
+
+# Fonctions appelées par la base (pg_net) : protégées par la clé interne x-cle-interne.
+[functions.importer-rss]
+verify_jwt = false
+
+[functions.analyser-article]
+verify_jwt = false
+
+[functions.maj-sources]
+verify_jwt = false
+
+# Appelée par le front avec la session (anonyme) du visiteur.
+[functions.chatbot]
+verify_jwt = true

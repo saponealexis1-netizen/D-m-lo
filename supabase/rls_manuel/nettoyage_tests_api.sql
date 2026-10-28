@@ -5,6 +5,6 @@ select 'affirmations' as table_, count(*) from public.affirmations where texte_a
 union all
 select 'contenus', count(*) from public.contenus where lot_import = 'test-rls-api';
 
--- Puis supprimer (les preuves partent avec leur affirmation) :
+-- Puis supprimer (les affirmations de test ne sont jamais publiées, elles n'ont pas de preuves) :
 -- delete from public.affirmations where texte_affirmation like '[TEST-API]%';
 -- delete from public.contenus where lot_import = 'test-rls-api';

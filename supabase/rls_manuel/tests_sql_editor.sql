@@ -2,17 +2,15 @@
 --  TESTS RLS RÉELS — à exécuter dans le SQL Editor de Supabase
 -- =====================================================================
 --  Rejouable à volonté, et sans risque :
---  * les données de test sont créées puis ANNULÉES (rollback) à la fin :
---    rien ne reste dans les tables ;
+--  * les données de test sont créées puis ANNULÉES à la fin : rien ne reste ;
 --  * chaque essai s'exécute avec le vrai rôle Postgres (anon ou authenticated)
 --    et un JWT simulé, donc avec les vraies policies du projet ;
 --  * seuls des objets temporaires (pg_temp), propres à la session, sont créés.
 --
---  Prérequis : 3 comptes de test créés dans Authentication > Users
---  (« Auto Confirm User » coché), avec leur rôle (voir docs/tutoriel-rls.md) :
---    editeur@demelo.test    role_equipe = editeur
---    relecteur@demelo.test  role_equipe = relecteur
---    visiteur@demelo.test   aucun rôle (simple compte connecté)
+--  Prérequis : 2 comptes de test créés dans Authentication > Users
+--  (« Auto Confirm User » coché) — voir docs/tutoriel-rls.md :
+--    admin@demelo.test     role_equipe = admin
+--    visiteur@demelo.test  aucun rôle (compte connecté sans privilège)
 --
 --  Lecture du résultat (dernier tableau affiché) :
 --    ✅ conforme   ❌ NON conforme   ⏳ table pas encore ouverte (GRANT pas encore fait)
@@ -85,102 +83,140 @@ begin
 end;
 $$;
 
+-- Simule l'administrateur pour créer les données de test (les triggers s'appliquent).
+create or replace function pg_temp.comme_admin(p_admin uuid) returns void language sql as $$
+  select set_config('request.jwt.claims', json_build_object('sub', p_admin, 'role', 'authenticated',
+    'app_metadata', json_build_object('role_equipe', 'admin'))::text, true)
+$$;
+
+create or replace function pg_temp.preuve_ok(p_aff bigint, p_src bigint, p_url text, p_relation text, p_nature text)
+returns bigint language sql as $$
+  insert into public.preuves (affirmation_id, source_id, url_preuve, url_finale, http_statut, type_relation, statut_preuve,
+    titre_document, date_document, empreinte_sha256, passage_verifie, extrait, nature, justification_nature)
+  values (p_aff, p_src, p_url, p_url, 200, p_relation::public.type_relation_preuve, 'verifiee',
+    '[TEST] Document', current_date, repeat('a', 64), true, '[TEST] passage', p_nature::public.nature_preuve, '[TEST]')
+  returning id
+$$;
+
+create or replace function pg_temp.recoupement() returns jsonb language sql as $$
+  select '{"periode": "t", "definition": "t", "unite": "t", "population": "t", "perimetre": "t",
+           "contradictions": "t", "dependances": "t"}'::jsonb
+$$;
+
 do $$
 declare
-  ed  uuid := (select id from auth.users where email = 'editeur@demelo.test');
-  rel uuid := (select id from auth.users where email = 'relecteur@demelo.test');
+  adm uuid := (select id from auth.users where email = 'admin@demelo.test');
   vis uuid := (select id from auth.users where email = 'visiteur@demelo.test');
-  s_media bigint;
   s_insee bigint := (select id from public.sources where nom = 'INSEE');
-  s_inactive bigint; c_visible bigint; c_masque bigint;
-  a_brouillon bigint; a_relecture bigint; a_publiee bigint; a_rel_relecture bigint; a_rel_brouillon bigint;
-  p_brouillon bigint; p_publiee bigint;
+  s_afp   bigint := (select id from public.sources where nom = 'AFP Factuel');
+  s_inactive bigint; c_visible bigint; c_masque bigint; c_fictif bigint;
+  a_publiee bigint; a_abst bigint; a_cours bigint; a_revue bigint; a_retiree bigint; a_nt bigint; a_masque bigint;
+  p_ok bigint; p_echec bigint; p_cours bigint;
   r jsonb := '[]';
 begin
-  if ed is null or rel is null or vis is null then
-    raise exception 'Créer d''abord les 3 comptes de test (editeur@, relecteur@, visiteur@demelo.test).';
+  if adm is null or vis is null then
+    raise exception 'Créer d''abord les comptes admin@demelo.test et visiteur@demelo.test.';
   end if;
 
   begin
     -- -----------------------------------------------------------------
-    -- Données de test (créées par le propriétaire, annulées à la fin).
-    -- Les triggers de validation s'appliquent : on simule les bons JWT.
+    -- Données de test (annulées à la fin). Domaines réservés : .example / .invalid
     -- -----------------------------------------------------------------
-    insert into public.sources (nom, type_source, url_base)
-    values ('[TEST] média sous licence', 'media', 'https://test.invalid/media') returning id into s_media;
-    insert into public.sources (nom, type_source, url_base, active)
-    values ('[TEST] source inactive', 'media', 'https://test.invalid', false) returning id into s_inactive;
-    insert into public.contenus (source_id, titre, url_originale, lot_import)
-    values (s_media, '[TEST] article visible', 'https://test.invalid/visible', 'test-rls') returning id into c_visible;
-    insert into public.contenus (source_id, titre, url_originale, visible_public, lot_import)
-    values (s_media, '[TEST] article masqué', 'https://test.invalid/masque', false, 'test-rls') returning id into c_masque;
+    perform pg_temp.comme_admin(adm);
+    insert into public.sources (nom, type_source, url_base, active, perimetres)
+    values ('[TEST] source inactive', 'statistique', 'https://demelo-test.example', false, array['demelo-test.example'])
+    returning id into s_inactive;
+    insert into public.contenus (media_nom, titre, url_originale)
+    values ('Média de test', '[TEST] article visible', 'https://www.demelo-test.example/visible') returning id into c_visible;
+    insert into public.contenus (media_nom, titre, url_originale, visible_public)
+    values ('Média de test', '[TEST] article masqué', 'https://www.demelo-test.example/masque', false) returning id into c_masque;
+    insert into public.contenus (media_nom, titre, url_originale, est_test)
+    values ('Média fictif de test', '[FICTIF] article', 'https://demelo-test.invalid/fictif', true) returning id into c_fictif;
 
-    perform set_config('request.jwt.claims', json_build_object('sub', ed, 'role', 'authenticated',
-      'app_metadata', json_build_object('role_equipe', 'editeur'))::text, true);
-    insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication)
-    values (c_visible, '[TEST] Brouillon de l''éditeur, jamais public.', 'vrai', 'Test') returning id into a_brouillon;
-    insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation)
-    values (a_brouillon, s_insee, 'https://test.invalid/preuve-brouillon', 'confirme') returning id into p_brouillon;
+    -- Analyse publiée « vrai », avec une preuve vérifiée et un échec tracé
+    insert into public.affirmations (contenu_id, texte_affirmation, citation_verifiee)
+    values (c_visible, '[TEST] Affirmation publiée.', true) returning id into a_publiee;
+    update public.affirmations set statut_analyse = 'en_cours' where id = a_publiee;
+    p_ok := pg_temp.preuve_ok(a_publiee, s_insee, 'https://www.insee.fr/fr/demelo-test-1', 'confirme', 'primaire');
+    insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, statut_preuve, motif_rejet)
+    values (a_publiee, s_insee, 'https://www.insee.fr/fr/demelo-test-404', 'confirme', 'inaccessible', '[TEST] HTTP 404')
+    returning id into p_echec;
+    update public.affirmations set statut_analyse = 'analyse_disponible', verdict = 'vrai', explication = '[TEST]', limites = '[TEST]',
+      modele_ia = 'claude-opus-5-5', version_prompt = 'test', analyse_le = now(), recoupement = pg_temp.recoupement(),
+      revue_motif = '[TEST] analyse manuelle'
+    where id = a_publiee;
 
-    insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication)
-    values (c_visible, '[TEST] Affirmation de l''éditeur en relecture.', 'vrai', 'Test') returning id into a_relecture;
-    insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation)
-    values (a_relecture, s_insee, 'https://test.invalid/preuve-relecture', 'confirme');
-    update public.affirmations set statut_workflow = 'en_relecture' where id = a_relecture;
+    -- Abstention
+    insert into public.affirmations (contenu_id, texte_affirmation, citation_verifiee)
+    values (c_visible, '[TEST] Affirmation en abstention.', true) returning id into a_abst;
+    update public.affirmations set statut_analyse = 'en_cours' where id = a_abst;
+    update public.affirmations set statut_analyse = 'verification_insuffisante', motif_abstention = '[TEST]', limites = '[TEST]',
+      modele_ia = 'claude-opus-5-5', analyse_le = now(), revue_motif = '[TEST]' where id = a_abst;
 
-    insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication)
-    values (c_visible, '[TEST] Affirmation publiée et vérifiée.', 'faux', 'Test') returning id into a_publiee;
-    insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation)
-    values (a_publiee, s_insee, 'https://test.invalid/preuve-publiee', 'contredit') returning id into p_publiee;
-    update public.affirmations set statut_workflow = 'en_relecture' where id = a_publiee;
+    -- En cours, avec une preuve secondaire seulement
+    insert into public.affirmations (contenu_id, texte_affirmation, citation_verifiee)
+    values (c_visible, '[TEST] Affirmation en cours.', true) returning id into a_cours;
+    update public.affirmations set statut_analyse = 'en_cours' where id = a_cours;
+    p_cours := pg_temp.preuve_ok(a_cours, s_insee, 'https://www.insee.fr/fr/demelo-test-2', 'confirme', 'secondaire');
 
-    perform set_config('request.jwt.claims', json_build_object('sub', rel, 'role', 'authenticated',
-      'app_metadata', json_build_object('role_equipe', 'relecteur'))::text, true);
-    update public.affirmations set statut_workflow = 'publie' where id = a_publiee;
-    insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication)
-    values (c_visible, '[TEST] Affirmation du relecteur en relecture.', 'vrai', 'Test') returning id into a_rel_relecture;
-    insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation)
-    values (a_rel_relecture, s_insee, 'https://test.invalid/preuve-rel', 'confirme');
-    update public.affirmations set statut_workflow = 'en_relecture' where id = a_rel_relecture;
+    -- Revue requise (sensible)
+    insert into public.affirmations (contenu_id, texte_affirmation, citation_verifiee, sensible, motif_sensibilite)
+    values (c_visible, '[TEST] Affirmation sensible.', true, true, '[TEST] accusation') returning id into a_revue;
+    update public.affirmations set statut_analyse = 'en_cours' where id = a_revue;
+    perform pg_temp.preuve_ok(a_revue, s_insee, 'https://www.insee.fr/fr/demelo-test-3', 'contredit', 'primaire');
+    update public.affirmations set statut_analyse = 'revue_requise', verdict = 'faux', explication = '[TEST]', limites = '[TEST]',
+      modele_ia = 'claude-opus-5-5', version_prompt = 'test', analyse_le = now(), recoupement = pg_temp.recoupement(),
+      revue_motif = '[TEST]' where id = a_revue;
+
+    -- Retirée, non traitée, publiée sur un article masqué
+    insert into public.affirmations (contenu_id, texte_affirmation, citation_verifiee)
+    values (c_visible, '[TEST] Affirmation retirée.', true) returning id into a_retiree;
+    update public.affirmations set statut_analyse = 'en_cours' where id = a_retiree;
+    update public.affirmations set statut_analyse = 'verification_insuffisante', motif_abstention = '[TEST]', limites = '[TEST]',
+      modele_ia = 'claude-opus-5-5', analyse_le = now(), revue_motif = '[TEST]' where id = a_retiree;
+    update public.affirmations set statut_analyse = 'retire', revue_motif = '[TEST] retrait' where id = a_retiree;
     insert into public.affirmations (contenu_id, texte_affirmation)
-    values (c_visible, '[TEST] Brouillon du relecteur.') returning id into a_rel_brouillon;
+    values (c_visible, '[TEST] Affirmation non traitée.') returning id into a_nt;
+    insert into public.affirmations (contenu_id, texte_affirmation, citation_verifiee)
+    values (c_masque, '[TEST] Analyse d''un article masqué.', true) returning id into a_masque;
+    update public.affirmations set statut_analyse = 'en_cours' where id = a_masque;
+    update public.affirmations set statut_analyse = 'verification_insuffisante', motif_abstention = '[TEST]', limites = '[TEST]',
+      modele_ia = 'claude-opus-5-5', analyse_le = now(), revue_motif = '[TEST]' where id = a_masque;
 
     -- -----------------------------------------------------------------
     -- Table sources (P1 à P3, G1)
     -- -----------------------------------------------------------------
-    r := r || pg_temp.essai('P1', 'anon voit une source active', 'anon', '=1',
-      format('select 1 from public.sources where id = %s', s_media));
-    r := r || pg_temp.essai('P1', 'anon ne voit pas une source inactive', 'anon', '=0',
-      format('select 1 from public.sources where id = %s', s_inactive));
-    r := r || pg_temp.essai('P1', 'éditeur voit la source inactive', 'editeur@demelo.test', '=1',
-      format('select 1 from public.sources where id = %s', s_inactive));
-    r := r || pg_temp.essai('P2', 'éditeur ajoute une source', 'editeur@demelo.test', '=1',
-      $q$ insert into public.sources (nom, type_source, url_base) values ('[TEST] nouvelle source', 'media', 'https://test.invalid/n') $q$);
-    r := r || pg_temp.essai('P2', 'compte sans rôle : ajout de source bloqué', 'visiteur@demelo.test', 'bloque',
-      $q$ insert into public.sources (nom, type_source, url_base) values ('[TEST] pirate', 'media', 'https://test.invalid/p') $q$);
-    r := r || pg_temp.essai('P3', 'éditeur modifie une source', 'editeur@demelo.test', '=1',
+    r := r || pg_temp.essai('P1', 'anon voit un organisme actif', 'anon', '=1', format('select 1 from public.sources where id = %s', s_insee));
+    r := r || pg_temp.essai('P1', 'anon ne voit pas un organisme inactif', 'anon', '=0', format('select 1 from public.sources where id = %s', s_inactive));
+    r := r || pg_temp.essai('P1', 'admin voit l''organisme inactif', 'admin@demelo.test', '=1', format('select 1 from public.sources where id = %s', s_inactive));
+    r := r || pg_temp.essai('P2', 'admin ajoute un organisme', 'admin@demelo.test', '=1',
+      $q$ insert into public.sources (nom, type_source, url_base, perimetres) values ('[TEST] nouvelle', 'statistique', 'https://demelo-test.example', array['demelo-test.example']) $q$);
+    r := r || pg_temp.essai('P2', 'compte sans rôle : ajout bloqué', 'visiteur@demelo.test', 'bloque',
+      $q$ insert into public.sources (nom, type_source, url_base, perimetres) values ('[TEST] pirate', 'statistique', 'https://demelo-test.example', array['demelo-test.example']) $q$);
+    r := r || pg_temp.essai('P3', 'admin modifie un organisme', 'admin@demelo.test', '=1',
       format('update public.sources set licence_info = licence_info where id = %s', s_inactive));
     r := r || pg_temp.essai('P3', 'compte sans rôle : modification bloquée', 'visiteur@demelo.test', 'bloque',
-      format('update public.sources set licence_info = %L where id = %s', 'piraté', s_media));
+      format('update public.sources set licence_info = %L where id = %s', 'piraté', s_insee));
     r := r || pg_temp.essai('G1', 'anon : écriture interdite (pas de GRANT)', 'anon', 'refus_droit',
-      $q$ insert into public.sources (nom, type_source, url_base) values ('[TEST] anon', 'media', 'https://test.invalid/a') $q$);
-    r := r || pg_temp.essai('G1', 'éditeur : suppression interdite (pas de GRANT)', 'editeur@demelo.test', 'refus_droit',
+      $q$ insert into public.sources (nom, type_source, url_base, perimetres) values ('[TEST] anon', 'statistique', 'https://demelo-test.example', array['demelo-test.example']) $q$);
+    r := r || pg_temp.essai('G1', 'admin : suppression interdite (pas de GRANT)', 'admin@demelo.test', 'refus_droit',
       format('delete from public.sources where id = %s', s_inactive));
 
     -- -----------------------------------------------------------------
     -- Table contenus (P4 à P6, G2)
     -- -----------------------------------------------------------------
-    r := r || pg_temp.essai('P4', 'anon voit l''article visible', 'anon', '=1',
-      format('select 1 from public.contenus where id = %s', c_visible));
-    r := r || pg_temp.essai('P4', 'anon ne voit pas l''article masqué', 'anon', '=0',
-      format('select 1 from public.contenus where id = %s', c_masque));
-    r := r || pg_temp.essai('P4', 'éditeur voit l''article masqué', 'editeur@demelo.test', '=1',
-      format('select 1 from public.contenus where id = %s', c_masque));
-    r := r || pg_temp.essai('P5', 'éditeur indexe un article', 'editeur@demelo.test', '=1',
-      format('insert into public.contenus (source_id, titre, url_originale) values (%s, %L, %L)', s_media, '[TEST] nouvel article', 'https://test.invalid/nouveau'));
-    r := r || pg_temp.essai('P5', 'compte sans rôle : indexation bloquée', 'visiteur@demelo.test', 'bloque',
-      format('insert into public.contenus (source_id, titre, url_originale) values (%s, %L, %L)', s_media, '[TEST] pirate', 'https://test.invalid/pirate'));
-    r := r || pg_temp.essai('P6', 'éditeur modifie un article', 'editeur@demelo.test', '=1',
+    r := r || pg_temp.essai('P4', 'anon voit l''article réel visible', 'anon', '=1', format('select 1 from public.contenus where id = %s', c_visible));
+    r := r || pg_temp.essai('P4', 'anon ne voit ni l''article masqué ni le fictif', 'anon', '=0',
+      format('select 1 from public.contenus where id in (%s, %s)', c_masque, c_fictif));
+    r := r || pg_temp.essai('P4', 'compte sans rôle ne voit pas le fictif', 'visiteur@demelo.test', '=0',
+      format('select 1 from public.contenus where id = %s', c_fictif));
+    r := r || pg_temp.essai('P4', 'admin voit le masqué et le fictif', 'admin@demelo.test', '=2',
+      format('select 1 from public.contenus where id in (%s, %s)', c_masque, c_fictif));
+    r := r || pg_temp.essai('P5', 'admin ajoute une donnée fictive', 'admin@demelo.test', '=1',
+      $q$ insert into public.contenus (media_nom, titre, url_originale, est_test) values ('Média fictif', '[FICTIF] ajout', 'https://demelo-test.invalid/ajout', true) $q$);
+    r := r || pg_temp.essai('P5', 'compte sans rôle : ajout bloqué', 'visiteur@demelo.test', 'bloque',
+      $q$ insert into public.contenus (media_nom, titre, url_originale) values ('Pirate', '[TEST] pirate', 'https://www.demelo-test.example/pirate') $q$);
+    r := r || pg_temp.essai('P6', 'admin modifie un article', 'admin@demelo.test', '=1',
       format('update public.contenus set theme = %L where id = %s', 'institutions', c_visible));
     r := r || pg_temp.essai('P6', 'compte sans rôle : modification bloquée', 'visiteur@demelo.test', 'bloque',
       format('update public.contenus set titre = %L where id = %s', '[TEST] piraté', c_visible));
@@ -188,90 +224,90 @@ begin
       format('update public.contenus set titre = %L where id = %s', '[TEST] anon', c_visible));
 
     -- -----------------------------------------------------------------
-    -- Table affirmations (P7 à P10, G3) — aucun brouillon ne doit fuiter
+    -- Table affirmations (P7 à P9, G3) — rien d'interne ne doit fuiter
     -- -----------------------------------------------------------------
-    r := r || pg_temp.essai('P7', 'anon voit l''affirmation publiée', 'anon', '=1',
-      format('select 1 from public.affirmations where id = %s', a_publiee));
-    r := r || pg_temp.essai('P7', 'anon ne voit aucun brouillon ni relecture', 'anon', '=0',
-      format('select 1 from public.affirmations where id in (%s, %s, %s, %s)', a_brouillon, a_relecture, a_rel_relecture, a_rel_brouillon));
-    r := r || pg_temp.essai('P7', 'compte sans rôle ne voit aucun brouillon', 'visiteur@demelo.test', '=0',
-      format('select 1 from public.affirmations where id in (%s, %s)', a_brouillon, a_relecture));
-    r := r || pg_temp.essai('P7', 'éditeur voit les brouillons de l''équipe', 'editeur@demelo.test', '=2',
-      format('select 1 from public.affirmations where id in (%s, %s)', a_brouillon, a_rel_brouillon));
-    r := r || pg_temp.essai('P8', 'éditeur crée un brouillon', 'editeur@demelo.test', '=1',
-      format('insert into public.affirmations (contenu_id, texte_affirmation, created_by) values (%s, %L, %L)', c_visible, '[TEST] Nouveau brouillon.', ed));
-    r := r || pg_temp.essai('P8', 'création directement « publiée » bloquée', 'editeur@demelo.test', 'bloque',
-      format('insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication, statut_workflow, created_by) values (%s, %L, %L, %L, %L, %L)',
-             c_visible, '[TEST] Publication forcée.', 'vrai', 'x', 'publie', ed));
+    r := r || pg_temp.essai('P7', 'anon voit l''analyse publiée et l''abstention', 'anon', '=2',
+      format('select 1 from public.affirmations where id in (%s, %s)', a_publiee, a_abst));
+    r := r || pg_temp.essai('P7', 'anon ne voit ni en cours, ni revue, ni retrait, ni non traité', 'anon', '=0',
+      format('select 1 from public.affirmations where id in (%s, %s, %s, %s)', a_cours, a_revue, a_retiree, a_nt));
+    r := r || pg_temp.essai('P7', 'anon ne voit pas l''analyse d''un article masqué', 'anon', '=0',
+      format('select 1 from public.affirmations where id = %s', a_masque));
+    r := r || pg_temp.essai('P7', 'compte sans rôle ne voit rien d''interne', 'visiteur@demelo.test', '=0',
+      format('select 1 from public.affirmations where id in (%s, %s)', a_cours, a_revue));
+    r := r || pg_temp.essai('P7', 'admin voit tout', 'admin@demelo.test', '=7',
+      format('select 1 from public.affirmations where id in (%s, %s, %s, %s, %s, %s, %s)', a_publiee, a_abst, a_cours, a_revue, a_retiree, a_nt, a_masque));
+    r := r || pg_temp.essai('P8', 'admin crée une affirmation', 'admin@demelo.test', '=1',
+      format('insert into public.affirmations (contenu_id, texte_affirmation) values (%s, %L)', c_visible, '[TEST] Ajout admin.'));
     r := r || pg_temp.essai('P8', 'compte sans rôle : création bloquée', 'visiteur@demelo.test', 'bloque',
-      format('insert into public.affirmations (contenu_id, texte_affirmation, created_by) values (%s, %L, %L)', c_visible, '[TEST] Pirate.', vis));
+      format('insert into public.affirmations (contenu_id, texte_affirmation) values (%s, %L)', c_visible, '[TEST] Pirate.'));
+    r := r || pg_temp.essai('P9', 'admin retire une analyse publiée, avec motif', 'admin@demelo.test', '=1',
+      format('update public.affirmations set statut_analyse = %L, revue_motif = %L where id = %s', 'retire', '[TEST] retrait', a_publiee));
     r := r || pg_temp.essai('P9', 'compte sans rôle : modification bloquée', 'visiteur@demelo.test', 'bloque',
-      format('update public.affirmations set explication = %L where id = %s', 'piraté', a_brouillon));
-    r := r || pg_temp.essai('P9', 'éditeur modifie son brouillon', 'editeur@demelo.test', '=1',
-      format('update public.affirmations set explication = %L where id = %s', 'Explication complétée.', a_brouillon));
-    r := r || pg_temp.essai('P10', 'éditeur supprime son brouillon', 'editeur@demelo.test', '=1',
-      format('delete from public.affirmations where id = %s', a_brouillon));
-    r := r || pg_temp.essai('P10', 'éditeur ne supprime pas le brouillon d''un autre', 'editeur@demelo.test', 'bloque',
-      format('delete from public.affirmations where id = %s', a_rel_brouillon));
-    r := r || pg_temp.essai('P10', 'suppression d''une affirmation publiée bloquée', 'relecteur@demelo.test', 'bloque',
-      format('delete from public.affirmations where id = %s', a_publiee));
+      format('update public.affirmations set statut_analyse = %L, revue_motif = %L where id = %s', 'retire', 'x', a_publiee));
     r := r || pg_temp.essai('G3', 'anon : création interdite (pas de GRANT)', 'anon', 'refus_droit',
       format('insert into public.affirmations (contenu_id, texte_affirmation) values (%s, %L)', c_visible, '[TEST] anon'));
+    r := r || pg_temp.essai('G3', 'admin : suppression interdite (pas de GRANT)', 'admin@demelo.test', 'refus_droit',
+      format('delete from public.affirmations where id = %s', a_nt));
 
     -- -----------------------------------------------------------------
-    -- Validation humaine (triggers, indépendants des policies)
+    -- Contrôles bloquants (triggers, indépendants des policies)
     -- -----------------------------------------------------------------
-    r := r || pg_temp.essai('W1', 'éditeur : publication bloquée', 'editeur@demelo.test', 'bloque',
-      format('update public.affirmations set statut_workflow = %L where id = %s', 'publie', a_relecture));
-    r := r || pg_temp.essai('W2', 'relecteur publie l''affirmation d''un autre', 'relecteur@demelo.test', '=1',
-      format('update public.affirmations set statut_workflow = %L where id = %s', 'publie', a_relecture));
-    r := r || pg_temp.essai('W3', 'relecteur : auto-validation bloquée', 'relecteur@demelo.test', 'bloque',
-      format('update public.affirmations set statut_workflow = %L where id = %s', 'publie', a_rel_relecture));
-    r := r || pg_temp.essai('W4', 'clé service_role : publication bloquée', 'service_role', 'bloque',
-      format('update public.affirmations set statut_workflow = %L where id = %s', 'publie', a_relecture));
-    r := r || pg_temp.essai('W5', 'envoi en relecture sans preuve bloqué', 'relecteur@demelo.test', 'bloque',
-      format('update public.affirmations set statut_workflow = %L where id = %s', 'en_relecture', a_rel_brouillon));
-    r := r || pg_temp.essai('W6', 'affirmation publiée : texte figé', 'relecteur@demelo.test', 'bloque',
-      format('update public.affirmations set explication = %L where id = %s', 'Réécrite après coup.', a_publiee));
-    r := r || pg_temp.essai('W7', 'rôle forgé sur un compte anonyme : bloqué', 'relecteur@demelo.test', 'bloque',
-      format('update public.affirmations set statut_workflow = %L where id = %s', 'publie', a_relecture), true);
+    r := r || pg_temp.essai('W1', 'admin : décision sans motif bloquée', 'admin@demelo.test', 'bloque',
+      format('update public.affirmations set statut_analyse = %L where id = %s', 'analyse_disponible', a_revue));
+    r := r || pg_temp.essai('W2', 'admin : revue d''un cas sensible avec motif', 'admin@demelo.test', '=1',
+      format('update public.affirmations set statut_analyse = %L, revue_motif = %L where id = %s', 'analyse_disponible', '[TEST] relu', a_revue));
+    r := r || pg_temp.essai('W3', '« vrai » sans preuve primaire bloqué', 'admin@demelo.test', 'bloque',
+      format('update public.affirmations set statut_analyse = %L, verdict = %L, explication = %L, limites = %L, modele_ia = %L, version_prompt = %L, analyse_le = now(), recoupement = pg_temp.recoupement(), revue_motif = %L where id = %s',
+             'analyse_disponible', 'vrai', 'x', 'x', 'claude-opus-5-5', 't', 'x', a_cours));
+    r := r || pg_temp.essai('W4', 'clé service_role : aucune modification d''analyse', 'service_role', 'bloque',
+      format('update public.affirmations set statut_analyse = %L, revue_motif = %L where id = %s', 'retire', 'x', a_abst));
+    r := r || pg_temp.essai('W5', 'analyse publiée : explication figée', 'admin@demelo.test', 'bloque',
+      format('update public.affirmations set explication = %L where id = %s', 'Réécrite', a_abst));
+    r := r || pg_temp.essai('W6', 'affirmation sur un contenu fictif bloquée', 'admin@demelo.test', 'bloque',
+      format('insert into public.affirmations (contenu_id, texte_affirmation) values (%s, %L)', c_fictif, '[TEST] Sur un faux article.'));
+    r := r || pg_temp.essai('W7', 'rôle admin forgé sur un compte anonyme : bloqué', 'admin@demelo.test', 'bloque',
+      format('update public.affirmations set statut_analyse = %L, revue_motif = %L where id = %s', 'retire', 'x', a_abst), true);
 
     -- -----------------------------------------------------------------
-    -- Table preuves (P11 à P13, G4)
+    -- Table preuves (P10 à P12, G4)
     -- -----------------------------------------------------------------
-    r := r || pg_temp.essai('P11', 'anon voit la preuve d''une affirmation publiée', 'anon', '=1',
-      format('select 1 from public.preuves where id = %s', p_publiee));
-    r := r || pg_temp.essai('P11', 'anon ne voit pas la preuve d''un brouillon', 'anon', '=0',
-      format('select 1 from public.preuves where id = %s', p_brouillon));
-    r := r || pg_temp.essai('P11', 'éditeur voit la preuve du brouillon', 'editeur@demelo.test', '=1',
-      format('select 1 from public.preuves where id = %s', p_brouillon));
-    r := r || pg_temp.essai('P12', 'éditeur ajoute une preuve à son brouillon', 'editeur@demelo.test', '=1',
-      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, ajoutee_par) values (%s, %s, %L, %L, %L)',
-             a_brouillon, s_insee, 'https://test.invalid/preuve-2', 'contextualise', ed));
-    r := r || pg_temp.essai('P12', 'preuve ajoutée à une affirmation publiée bloquée', 'editeur@demelo.test', 'bloque',
-      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, ajoutee_par) values (%s, %s, %L, %L, %L)',
-             a_publiee, s_insee, 'https://test.invalid/preuve-3', 'confirme', ed));
-    r := r || pg_temp.essai('P12', 'extrait d''une source sous licence bloqué', 'editeur@demelo.test', 'bloque',
-      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, extrait, ajoutee_par) values (%s, %s, %L, %L, %L, %L)',
-             a_brouillon, s_media, 'https://test.invalid/preuve-4', 'confirme', 'Texte copié', ed));
-    r := r || pg_temp.essai('P12', 'compte sans rôle : ajout de preuve bloqué', 'visiteur@demelo.test', 'bloque',
-      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, ajoutee_par) values (%s, %s, %L, %L, %L)',
-             a_brouillon, s_insee, 'https://test.invalid/preuve-5', 'confirme', vis));
-    r := r || pg_temp.essai('P13', 'éditeur supprime la preuve d''un brouillon', 'editeur@demelo.test', '=1',
-      format('delete from public.preuves where id = %s', p_brouillon));
-    r := r || pg_temp.essai('P13', 'preuve d''une affirmation publiée : suppression bloquée', 'editeur@demelo.test', 'bloque',
-      format('delete from public.preuves where id = %s', p_publiee));
+    r := r || pg_temp.essai('P10', 'anon voit la preuve vérifiée d''une analyse publiée', 'anon', '=1', format('select 1 from public.preuves where id = %s', p_ok));
+    r := r || pg_temp.essai('P10', 'anon ne voit pas l''échec tracé', 'anon', '=0', format('select 1 from public.preuves where id = %s', p_echec));
+    r := r || pg_temp.essai('P10', 'anon ne voit pas la preuve d''une analyse en cours', 'anon', '=0', format('select 1 from public.preuves where id = %s', p_cours));
+    r := r || pg_temp.essai('P10', 'admin voit l''échec et la preuve en cours', 'admin@demelo.test', '=2',
+      format('select 1 from public.preuves where id in (%s, %s)', p_echec, p_cours));
+    r := r || pg_temp.essai('P11', 'admin ajoute une preuve pendant l''analyse', 'admin@demelo.test', '=1',
+      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, statut_preuve, motif_rejet) values (%s, %s, %L, %L, %L, %L)',
+             a_cours, s_insee, 'https://www.insee.fr/fr/demelo-test-4', 'confirme', 'rejetee', '[TEST]'));
+    r := r || pg_temp.essai('P11', 'preuve ajoutée à une analyse publiée bloquée', 'admin@demelo.test', 'bloque',
+      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, statut_preuve, motif_rejet) values (%s, %s, %L, %L, %L, %L)',
+             a_abst, s_insee, 'https://www.insee.fr/fr/demelo-test-5', 'confirme', 'rejetee', '[TEST]'));
+    r := r || pg_temp.essai('P11', 'preuve vérifiée hors périmètre bloquée', 'admin@demelo.test', 'bloque',
+      format('select pg_temp.preuve_ok(%s, %s, %L, %L, %L)', a_cours, s_insee, 'https://www.demelo-test.example/faux-insee', 'confirme', 'primaire'));
+    r := r || pg_temp.essai('P11', 'extrait d''une source sous licence bloqué', 'admin@demelo.test', 'bloque',
+      format('select pg_temp.preuve_ok(%s, %s, %L, %L, %L)', a_cours, s_afp, 'https://factuel.afp.com/demelo-test', 'confirme', 'secondaire'));
+    r := r || pg_temp.essai('P11', 'compte sans rôle : ajout bloqué', 'visiteur@demelo.test', 'bloque',
+      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, statut_preuve, motif_rejet) values (%s, %s, %L, %L, %L, %L)',
+             a_cours, s_insee, 'https://www.insee.fr/fr/demelo-test-6', 'confirme', 'rejetee', '[TEST]'));
+    r := r || pg_temp.essai('P12', 'admin modifie une preuve pendant l''analyse', 'admin@demelo.test', '=1',
+      format('update public.preuves set note = %L where id = %s', '[TEST] note', p_cours));
+    r := r || pg_temp.essai('P12', 'preuve d''une analyse publiée figée', 'admin@demelo.test', 'bloque',
+      format('update public.preuves set note = %L where id = %s', '[TEST] note', p_ok));
     r := r || pg_temp.essai('G4', 'anon : ajout de preuve interdit (pas de GRANT)', 'anon', 'refus_droit',
-      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation) values (%s, %s, %L, %L)',
-             a_brouillon, s_insee, 'https://test.invalid/preuve-6', 'confirme'));
+      format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, statut_preuve, motif_rejet) values (%s, %s, %L, %L, %L, %L)',
+             a_cours, s_insee, 'https://www.insee.fr/fr/demelo-test-7', 'confirme', 'rejetee', 'x'));
+    r := r || pg_temp.essai('G4', 'admin : suppression interdite (pas de GRANT)', 'admin@demelo.test', 'refus_droit',
+      format('delete from public.preuves where id = %s', p_echec));
 
     -- -----------------------------------------------------------------
-    -- Vue v_feed_verifie (G5)
+    -- Vues (G5)
     -- -----------------------------------------------------------------
-    r := r || pg_temp.essai('G5', 'anon : la vue compte 1 affirmation publiée (pas les brouillons)', 'anon', '=1',
-      format('select 1 from public.v_feed_verifie where id = %s and nb_affirmations_publiees = 1 and statut_verification = %L', c_visible, 'verifie'));
-    r := r || pg_temp.essai('G5', 'anon : l''article masqué est absent de la vue', 'anon', '=0',
-      format('select 1 from public.v_feed_verifie where id = %s', c_masque));
+    r := r || pg_temp.essai('G5', 'anon : fiche publique avec mention IA et 1 preuve', 'anon', '=1',
+      format('select 1 from public.v_analyses_publiques where id = %s and mention = %L and jsonb_array_length(preuves) = 1', a_publiee, 'Analyse produite par IA'));
+    r := r || pg_temp.essai('G5', 'anon : fiches limitées aux 2 analyses publiques', 'anon', '=2',
+      format('select 1 from public.v_analyses_publiques where contenu_id in (%s, %s)', c_visible, c_masque));
+    r := r || pg_temp.essai('G5', 'anon : le flux n''affiche ni masqué ni fictif', 'anon', '=0',
+      format('select 1 from public.v_feed_verifie where id in (%s, %s)', c_masque, c_fictif));
 
     raise exception 'annuler_donnees_test';   -- annule TOUTES les données de test
   exception when others then

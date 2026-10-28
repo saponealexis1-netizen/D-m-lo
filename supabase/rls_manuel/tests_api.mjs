@@ -1,20 +1,19 @@
 // Tests RLS « bout en bout » via l'API REST Supabase, avec de vrais JWT.
 //
-// C'est exactement le chemin d'un futur front : clé publique + connexion.
-// À lancer APRÈS la configuration manuelle des RLS (docs/tutoriel-rls.md, étape 6).
+// C'est exactement le chemin du futur front : clé publique + connexion.
+// À lancer APRÈS la configuration manuelle des RLS (docs/tutoriel-rls.md, étape 7).
+// Le pipeline IA n'est pas testé ici : il n'utilise pas l'API mais son rôle serveur.
 //
 // Variables d'environnement (jamais commitées, jamais la clé secrète) :
 //   SUPABASE_URL                  https://<ref>.supabase.co
 //   SUPABASE_PUBLISHABLE_KEY      clé publique (sb_publishable_... ou anon)
-//   DEMELO_EDITEUR_EMAIL / DEMELO_EDITEUR_MDP
-//   DEMELO_RELECTEUR_EMAIL / DEMELO_RELECTEUR_MDP
+//   DEMELO_ADMIN_EMAIL / DEMELO_ADMIN_MDP
 //   DEMELO_VISITEUR_EMAIL / DEMELO_VISITEUR_MDP     compte connecté sans rôle
 //
 // Usage : node supabase/rls_manuel/tests_api.mjs   (Node 18+, aucune dépendance)
 //
-// Le script crée un article MASQUÉ et une affirmation « [TEST-API] », puis
-// retire l'affirmation à la fin. Supprimer ensuite ces lignes avec
-// supabase/rls_manuel/nettoyage_tests_api.sql (SQL Editor).
+// Le script crée un article MASQUÉ, une donnée fictive et une affirmation « [TEST-API] »
+// non publiée. Les supprimer ensuite avec supabase/rls_manuel/nettoyage_tests_api.sql.
 
 const URL_PROJET = process.env.SUPABASE_URL?.replace(/\/$/, "");
 const CLE = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -29,6 +28,7 @@ if (CLE.startsWith("sb_secret_") || jwtRole(CLE) === "service_role") {
 
 const resultats = [];
 const marque = `[TEST-API] ${new Date().toISOString()}`;
+const suffixe = Date.now();
 
 // --- Outils -----------------------------------------------------------
 function jwtRole(jeton) {
@@ -83,88 +83,67 @@ function verifier(code, test, r, attendu) {
 
 // --- Scénario ---------------------------------------------------------
 const anon = null;
-const editeur = await connexion("EDITEUR");
-const relecteur = await connexion("RELECTEUR");
+const admin = await connexion("ADMIN");
 const visiteur = await connexion("VISITEUR");
-console.log(`Rôles lus dans le JWT : éditeur=${editeur.app?.role_equipe}, relecteur=${relecteur.app?.role_equipe}, visiteur=${visiteur.app?.role_equipe ?? "aucun"}\n`);
+console.log(`Rôles lus dans le JWT : admin=${admin.app?.role_equipe}, visiteur=${visiteur.app?.role_equipe ?? "aucun"}\n`);
 
-const insee = (await api(anon, "GET", "sources?select=id&nom=eq.INSEE")).donnees?.[0]?.id;
+verifier("P1", "anon lit les organismes actifs (15)", await api(anon, "GET", "sources?select=id&active=eq.true"), 15);
+verifier("G1", "anon ne peut pas créer d'organisme",
+  await api(anon, "POST", "sources", { nom: marque, type_source: "statistique", url_base: "https://demelo-test.example", perimetres: ["demelo-test.example"] }), "bloque");
+verifier("P2", "compte sans rôle ne peut pas créer d'organisme",
+  await api(visiteur, "POST", "sources", { nom: marque, type_source: "statistique", url_base: "https://demelo-test.example", perimetres: ["demelo-test.example"] }), "bloque");
+verifier("P7", "anon ne voit aucune analyse interne",
+  await api(anon, "GET", "affirmations?select=id&statut_analyse=not.in.(analyse_disponible,verification_insuffisante)"), 0);
+verifier("P4", "anon ne voit aucune donnée fictive", await api(anon, "GET", "contenus?select=id&est_test=eq.true"), 0);
 
-verifier("P1", "anon lit les sources actives", await api(anon, "GET", "sources?select=id&nom=eq.INSEE"), 1);
-verifier("G1", "anon ne peut pas créer de source",
-  await api(anon, "POST", "sources", { nom: marque, type_source: "media", url_base: "https://test.invalid" }), "bloque");
-verifier("P7", "anon ne voit aucune affirmation non publiée",
-  await api(anon, "GET", "affirmations?select=id&statut_workflow=neq.publie"), 0);
-verifier("P5", "compte sans rôle ne peut pas indexer d'article",
-  await api(visiteur, "POST", "contenus", { source_id: insee, titre: marque, url_originale: `https://test.invalid/v-${Date.now()}` }), "bloque");
-
-const contenu = verifier("P5", "éditeur indexe un article (masqué)",
-  await api(editeur, "POST", "contenus", {
-    source_id: insee, titre: marque, url_originale: `https://test.invalid/${Date.now()}`,
+const contenu = verifier("P5", "admin indexe un article (masqué)",
+  await api(admin, "POST", "contenus", {
+    media_nom: "Média de test", titre: marque, url_originale: `https://www.demelo-test.example/${suffixe}`,
     visible_public: false, lot_import: "test-rls-api",
   }), 1).donnees?.[0];
+verifier("P5", "admin ajoute une donnée fictive",
+  await api(admin, "POST", "contenus", {
+    media_nom: "Média fictif de test", titre: `[FICTIF] ${marque}`, url_originale: `https://demelo-test.invalid/${suffixe}`,
+    est_test: true, lot_import: "test-rls-api",
+  }), 1);
+verifier("P5", "compte sans rôle ne peut pas indexer d'article",
+  await api(visiteur, "POST", "contenus", { media_nom: "Pirate", titre: marque, url_originale: `https://www.demelo-test.example/v-${suffixe}` }), "bloque");
 verifier("P4", "anon ne voit pas l'article masqué", await api(anon, "GET", `contenus?select=id&id=eq.${contenu?.id}`), 0);
 
-const aff = verifier("P8", "éditeur crée un brouillon",
-  await api(editeur, "POST", "affirmations", {
-    contenu_id: contenu?.id, texte_affirmation: `${marque} affirmation de test`,
-    verdict: "vrai", explication: "Test automatique des RLS.",
-  }), 1).donnees?.[0];
-resultats.push({ ok: aff?.created_by === editeur.id, code: "P8", test: "auteur enregistré = éditeur connecté", obtenu: aff?.created_by });
-console.log(`${aff?.created_by === editeur.id ? "✅" : "❌"} P8   auteur enregistré = éditeur connecté`);
+const aff = verifier("P8", "admin crée une affirmation (non traitée)",
+  await api(admin, "POST", "affirmations", { contenu_id: contenu?.id, texte_affirmation: `${marque} affirmation de test` }), 1).donnees?.[0];
+verifier("P7", "anon ne voit pas l'affirmation non traitée", await api(anon, "GET", `affirmations?select=id&id=eq.${aff?.id}`), 0);
+verifier("P7", "compte sans rôle ne la voit pas non plus", await api(visiteur, "GET", `affirmations?select=id&id=eq.${aff?.id}`), 0);
+verifier("W1", "publication directe refusée (statut non_traite -> analyse_disponible)",
+  await api(admin, "PATCH", `affirmations?id=eq.${aff?.id}`, { statut_analyse: "analyse_disponible", revue_motif: "test" }), "bloque");
+verifier("P9", "compte sans rôle ne peut pas modifier",
+  await api(visiteur, "PATCH", `affirmations?id=eq.${aff?.id}`, { contexte: "piraté" }), "bloque");
+verifier("G3", "admin ne peut pas supprimer (pas de GRANT)", await api(admin, "DELETE", `affirmations?id=eq.${aff?.id}`), "bloque");
 
-verifier("P7", "anon ne voit pas le brouillon", await api(anon, "GET", `affirmations?select=id&id=eq.${aff?.id}`), 0);
-verifier("P7", "compte sans rôle ne voit pas le brouillon", await api(visiteur, "GET", `affirmations?select=id&id=eq.${aff?.id}`), 0);
-verifier("W5", "envoi en relecture sans preuve refusé",
-  await api(editeur, "PATCH", `affirmations?id=eq.${aff?.id}`, { statut_workflow: "en_relecture" }), "bloque");
-verifier("P12", "éditeur ajoute une preuve",
-  await api(editeur, "POST", "preuves", { affirmation_id: aff?.id, source_id: insee, url_preuve: "https://test.invalid/preuve", type_relation: "confirme" }), 1);
-verifier("P11", "anon ne voit pas la preuve du brouillon", await api(anon, "GET", `preuves?select=id&affirmation_id=eq.${aff?.id}`), 0);
-verifier("P9", "éditeur envoie en relecture",
-  await api(editeur, "PATCH", `affirmations?id=eq.${aff?.id}`, { statut_workflow: "en_relecture" }), 1);
-verifier("W1", "éditeur ne peut pas publier",
-  await api(editeur, "PATCH", `affirmations?id=eq.${aff?.id}`, { statut_workflow: "publie" }), "bloque");
-
-// Tentative d'élévation : l'éditeur écrit role_equipe dans SES métadonnées (user_metadata).
+// Tentative d'élévation : le visiteur écrit role_equipe dans SES métadonnées (user_metadata).
 await fetch(`${URL_PROJET}/auth/v1/user`, {
   method: "PUT",
-  headers: { apikey: CLE, Authorization: `Bearer ${editeur.jeton}`, "Content-Type": "application/json" },
-  body: JSON.stringify({ data: { role_equipe: "relecteur" } }),
+  headers: { apikey: CLE, Authorization: `Bearer ${visiteur.jeton}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ data: { role_equipe: "admin" } }),
 });
 const rafraichi = await (await fetch(`${URL_PROJET}/auth/v1/token?grant_type=refresh_token`, {
   method: "POST",
   headers: { apikey: CLE, "Content-Type": "application/json" },
-  body: JSON.stringify({ refresh_token: editeur.rafraichir }),
+  body: JSON.stringify({ refresh_token: visiteur.rafraichir }),
 })).json();
-const editeurRafraichi = { jeton: rafraichi.access_token ?? editeur.jeton };
-verifier("W1", "élévation via user_metadata sans effet : publication refusée",
-  await api(editeurRafraichi, "PATCH", `affirmations?id=eq.${aff?.id}`, { statut_workflow: "publie" }), "bloque");
-// Remet user_metadata propre.
+const visiteurRafraichi = { jeton: rafraichi.access_token ?? visiteur.jeton };
+verifier("P4", "élévation via user_metadata sans effet : fictifs toujours invisibles",
+  await api(visiteurRafraichi, "GET", "contenus?select=id&est_test=eq.true"), 0);
+verifier("P9", "élévation via user_metadata sans effet : modification refusée",
+  await api(visiteurRafraichi, "PATCH", `affirmations?id=eq.${aff?.id}`, { contexte: "piraté" }), "bloque");
 await fetch(`${URL_PROJET}/auth/v1/user`, {
   method: "PUT",
-  headers: { apikey: CLE, Authorization: `Bearer ${editeurRafraichi.jeton}`, "Content-Type": "application/json" },
+  headers: { apikey: CLE, Authorization: `Bearer ${visiteurRafraichi.jeton}`, "Content-Type": "application/json" },
   body: JSON.stringify({ data: { role_equipe: null } }),
 });
 
-verifier("P7", "relecteur voit l'affirmation en relecture", await api(relecteur, "GET", `affirmations?select=id&id=eq.${aff?.id}`), 1);
-const publiee = verifier("W2", "relecteur publie l'affirmation de l'éditeur",
-  await api(relecteur, "PATCH", `affirmations?id=eq.${aff?.id}`, { statut_workflow: "publie" }), 1).donnees?.[0];
-resultats.push({ ok: publiee?.reviewed_by === relecteur.id, code: "W2", test: "relecteur enregistré", obtenu: publiee?.reviewed_by });
-console.log(`${publiee?.reviewed_by === relecteur.id ? "✅" : "❌"} W2   relecteur enregistré dans reviewed_by`);
-
-verifier("P7", "anon voit l'affirmation publiée", await api(anon, "GET", `affirmations?select=id&id=eq.${aff?.id}`), 1);
-verifier("P11", "anon voit sa preuve", await api(anon, "GET", `preuves?select=id&affirmation_id=eq.${aff?.id}`), 1);
-verifier("P13", "preuve d'une affirmation publiée : suppression refusée",
-  await api(editeur, "DELETE", `preuves?affirmation_id=eq.${aff?.id}`), "bloque");
-verifier("W6", "affirmation publiée : texte figé",
-  await api(relecteur, "PATCH", `affirmations?id=eq.${aff?.id}`, { explication: "Réécrite." }), "bloque");
-verifier("P10", "affirmation publiée : suppression refusée",
-  await api(relecteur, "DELETE", `affirmations?id=eq.${aff?.id}`), "bloque");
-
-// Fin : on retire l'affirmation de test pour qu'elle ne soit plus publique.
-verifier("W8", "relecteur retire l'affirmation de test",
-  await api(relecteur, "PATCH", `affirmations?id=eq.${aff?.id}`, { statut_workflow: "retire" }), 1);
-verifier("P7", "anon ne la voit plus", await api(anon, "GET", `affirmations?select=id&id=eq.${aff?.id}`), 0);
+verifier("G5", "anon lit la fiche publique (vue)", await api(anon, "GET", "v_analyses_publiques?select=id&limit=1"),
+  (await api(admin, "GET", "v_analyses_publiques?select=id&limit=1")).lignes);
 
 const echecs = resultats.filter((r) => !r.ok).length;
 console.log(`\n${resultats.length - echecs} ✅ / ${echecs} ❌`);

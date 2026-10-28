@@ -2,6 +2,8 @@
 
 > **Statut au 28/10/2026 : étapes 0 à 4 réalisées** (v1 archivée, v2 créée et fermée, 28 sources), voir `docs/journal-phase2.md`. Prochaine étape : 5 (Auth), puis 6 (RLS manuelles). Chaque étape marquée 🔒 attend une validation explicite de l'équipe.
 
+> **Mise à jour du 28/10/2026 (phase 3A)** : le circuit éditeur / relecteur est **remplacé** par le fact-checking automatisé par Claude. Migration complémentaire préparée, non appliquée : `supabase/brouillons/v2_05_pipeline_ia.sql`. Spécification : `docs/pipeline-ia.md`. RLS : nouveau `rls_manuel/` (12 policies) et `docs/tutoriel-rls.md`. Les sections 5 à 7 ci-dessous décrivent l'état d'avant cette décision.
+
 ## Périmètre du MVP (ajusté le 28/10/2026)
 - **Priorité absolue : 500 articles politiques réels indexés et 3 à 5 vérifications rigoureuses.**
 - **YouTube est retiré du MVP** (clé API, quotas, transcriptions). L'architecture reste extensible : `format_contenu` ne contient que `article`, et un nouveau format s'ajoute sans toucher aux tables (`alter type public.format_contenu add value 'video';`).

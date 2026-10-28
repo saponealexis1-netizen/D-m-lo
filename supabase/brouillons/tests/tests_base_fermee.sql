@@ -20,19 +20,21 @@ end $$;
 grant execute on function tests_fermee.refuse(text) to anon, authenticated;
 
 insert into auth.users (id, email, raw_app_meta_data) values
-  ('00000000-0000-0000-0000-0000000000f1', 'relecteur.fermee@test', '{"role_equipe": "relecteur"}');
+  ('00000000-0000-0000-0000-0000000000f1', 'admin.fermee@test', '{"role_equipe": "admin"}');
 
 -- Un brouillon existe déjà (créé par le propriétaire de la base).
-insert into public.contenus (source_id, titre, url_originale)
-values ((select id from public.sources where nom = 'INSEE'), 'Article de test fermé', 'https://www.lemonde.fr/test-ferme');
-select set_config('request.jwt.claims', '{"sub": "00000000-0000-0000-0000-0000000000f1"}', false);
+insert into public.contenus (media_nom, titre, url_originale)
+values ('Le Monde', 'Article de test fermé', 'https://www.lemonde.fr/test-ferme');
+select set_config('request.jwt.claims', '{"sub": "00000000-0000-0000-0000-0000000000f1", "app_metadata": {"role_equipe": "admin"}}', false);
 insert into public.affirmations (contenu_id, texte_affirmation)
 values ((select id from public.contenus where url_originale = 'https://www.lemonde.fr/test-ferme'), 'Brouillon secret qui ne doit jamais fuiter.');
 
 insert into tests_fermee.resultats (nom, ok)
-select 'fermée : RLS activée sur les 4 tables, 0 policy',
+select 'fermée : RLS activée sur les 4 tables, 0 policy client (seul le rôle pipeline en a)',
        (select bool_and(rowsecurity) from pg_tables where schemaname = 'public')
-       and not exists (select 1 from pg_policies where schemaname = 'public');
+       and not exists (select 1 from pg_policies where schemaname = 'public'
+                        and roles && array['anon', 'authenticated', 'public']::name[])
+       and (select count(*) = 6 from pg_policies where schemaname = 'public' and roles = array['demelo_pipeline']::name[]);
 insert into tests_fermee.resultats (nom, ok)
 select 'fermée : aucun droit pour anon/authenticated sur les tables et la vue',
        not exists (select 1 from information_schema.role_table_grants
@@ -49,12 +51,12 @@ insert into tests_fermee.resultats (nom, ok) select 'fermée : anon n''écrit pa
   tests_fermee.refuse($$ insert into public.sources (nom, type_source, url_base) values ('X', 'media', 'https://x.fr') $$);
 reset role;
 
--- Même un relecteur connecté n'a encore accès à rien.
-select set_config('request.jwt.claims', '{"sub": "00000000-0000-0000-0000-0000000000f1", "role": "authenticated", "app_metadata": {"role_equipe": "relecteur"}}', false);
+-- Même un administrateur connecté n'a encore accès à rien (pas de policy ni de GRANT).
+select set_config('request.jwt.claims', '{"sub": "00000000-0000-0000-0000-0000000000f1", "role": "authenticated", "app_metadata": {"role_equipe": "admin"}}', false);
 set role authenticated;
-insert into tests_fermee.resultats (nom, ok) select 'fermée : relecteur ne lit pas les brouillons', tests_fermee.refuse('select * from public.affirmations');
-insert into tests_fermee.resultats (nom, ok) select 'fermée : relecteur n''écrit pas',
-  tests_fermee.refuse($$ insert into public.contenus (source_id, titre, url_originale) values (1, 'X', 'https://x.fr/1') $$);
+insert into tests_fermee.resultats (nom, ok) select 'fermée : admin ne lit pas encore les analyses', tests_fermee.refuse('select * from public.affirmations');
+insert into tests_fermee.resultats (nom, ok) select 'fermée : admin n''écrit pas encore',
+  tests_fermee.refuse($$ insert into public.contenus (media_nom, titre, url_originale) values ('X', 'X titre', 'https://x.fr/1') $$);
 reset role;
 
 -- Nettoyage des données de ce test.

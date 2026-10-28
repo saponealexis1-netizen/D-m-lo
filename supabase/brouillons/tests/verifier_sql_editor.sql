@@ -14,7 +14,7 @@ begin
     raise exception 'Base fermée : aucun accès ne doit réussir.';
   end if;
   if (select count(*) from public.affirmations where texte_affirmation like '[TEST]%')
-   + (select count(*) from public.contenus where titre like '[TEST]%')
+   + (select count(*) from public.contenus where url_originale like '%demelo-test%')
    + (select count(*) from public.sources where nom like '[TEST]%') > 0 then
     raise exception 'Des données de test sont restées en base.';
   end if;

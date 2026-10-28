@@ -25,6 +25,7 @@ executer -f "$RACINE/supabase/brouillons/v2_01_archiver_v1.sql"
 executer -f "$RACINE/supabase/brouillons/v2_02_schema_cible.sql"
 executer -f "$RACINE/supabase/brouillons/v2_03_donnees_initiales.sql"
 executer -f "$RACINE/supabase/migrations/20261028155725_v2_04_sources_retenues.sql"
+executer -f "$RACINE/supabase/brouillons/v2_05_pipeline_ia.sql"
 # État 1 : base fermée, avant la configuration manuelle des RLS
 executer -f "$ICI/tests_base_fermee.sql"
 executer -f "$ICI/comptes_test_sql_editor.sql"
@@ -36,4 +37,4 @@ sql_editor ferme
 # État 2 : après la configuration manuelle (le fichier est rejoué ici pour le test)
 executer -f "$RACINE/supabase/rls_manuel/policies_et_grants.sql"
 sql_editor configure
-executer -f "$ICI/tests_v2.sql"
+executer -f "$ICI/tests_v3_pipeline.sql"

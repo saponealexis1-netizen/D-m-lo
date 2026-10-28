@@ -28,7 +28,7 @@ import pg from "pg";
 
 const ICI = dirname(fileURLToPath(import.meta.url));
 const ESSAI = process.argv.includes("--essai");
-const MAX_PAR_FLUX = 100;
+const MAX_PAR_FLUX = 1000;   // garde-fou contre un flux anormal, pas une limite éditoriale
 const USER_AGENT = "DemeloBot/1.0 (projet etudiant de fact-checking; collecte hebdomadaire des titres)";
 // Paramètres de suivi retirés pour obtenir une URL canonique.
 const PARAMS_SUIVI = /^(utm_|xtor$|at_|xts$|ns_|fbclid$|gclid$|mc_|cmp$|origin$|ref$)/i;
@@ -115,6 +115,7 @@ export function preparerArticles(items, flux, lot) {
   const vus = new Set();
   const articles = [];
   let ignores = 0;
+  let plafond = false;
   for (const it of items) {
     const url = it.lien ? urlCanonique(it.lien) : null;
     const hote = url ? new URL(url).hostname : "";
@@ -136,9 +137,9 @@ export function preparerArticles(items, flux, lot) {
       date_publication: date && !isNaN(date) ? date.toISOString() : null,
       lot_import: lot,
     });
-    if (articles.length >= MAX_PAR_FLUX) break;
+    if (articles.length >= MAX_PAR_FLUX) { plafond = items.indexOf(it) < items.length - 1; break; }
   }
-  return { articles, ignores };
+  return { articles, ignores, plafond };
 }
 
 // ---------------------------------------------------------------------
@@ -232,8 +233,8 @@ async function collecter(client, flux, lot, debut) {
       ligne.http = res.status;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const items = lireFlux(await res.text());
-      const { articles, ignores } = preparerArticles(items, f, lot);
-      Object.assign(ligne, { statut: "ok", lus: items.length, retenus: articles.length, ignores });
+      const { articles, ignores, plafond } = preparerArticles(items, f, lot);
+      Object.assign(ligne, { statut: "ok", lus: items.length, retenus: articles.length, ignores, plafond });
       if (client && articles.length) Object.assign(ligne, await enregistrer(client, articles));
     } catch (e) {
       Object.assign(ligne, { statut: "erreur", erreur: String(e.message ?? e).slice(0, 300) });
@@ -258,7 +259,7 @@ async function collecter(client, flux, lot, debut) {
     "| Média | Statut | Lus | Retenus | Nouveaux | Déjà connus | Erreur |",
     "|---|---|---|---|---|---|---|",
     ...rapport.flux.map((l) =>
-      `| ${l.media} | ${l.statut === "ok" ? "✅" : "❌"} | ${l.lus ?? "-"} | ${l.retenus ?? "-"} | ${l.nouveaux ?? "-"} | ${l.deja_connus ?? "-"} | ${l.erreur ?? ""} |`),
+      `| ${l.media} | ${l.statut === "ok" ? "✅" : "❌"} | ${l.lus ?? "-"} | ${l.retenus ?? "-"} | ${l.nouveaux ?? "-"} | ${l.deja_connus ?? "-"} | ${l.erreur ?? (l.plafond ? `plafond de ${MAX_PAR_FLUX} atteint` : "")} |`),
     "",
     `**Nouveaux articles : ${rapport.total_nouveaux}** — flux en erreur : ${rapport.flux_en_erreur}/${rapport.flux.length}` +
       (rapport.total_articles_reels !== undefined ? ` — articles réels en base : ${rapport.total_articles_reels}` : ""),

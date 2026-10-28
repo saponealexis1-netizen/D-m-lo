@@ -4,7 +4,7 @@ Ce tutoriel vous fait créer vous-mêmes, dans Supabase, les **13 policies** et 
 
 - Fichier de référence : `supabase/rls_manuel/policies_et_grants.sql`. **À ne jamais exécuter d'un bloc** : on y recopie une policy à la fois.
 - Tests : `supabase/rls_manuel/tests_sql_editor.sql` (SQL Editor) et `supabase/rls_manuel/tests_api.mjs` (API réelle).
-- Prérequis : les migrations `v2_01` à `v2_03` ont été appliquées. La base est alors **fermée** : RLS activée, 0 policy, 0 GRANT pour les clients.
+- Prérequis : les migrations `v2_01` à `v2_04` ont été appliquées (15 sources). La base est alors **fermée** : RLS activée, 0 policy, 0 GRANT pour les clients.
 
 ---
 
@@ -350,7 +350,7 @@ create policy preuves_lecture on public.preuves
 | Opération | `insert` |
 | Condition | `with check ((select prive.est_membre()) and ajoutee_par = (select auth.uid()))` |
 | Pourquoi | L'équipe documente, en son nom. Le trigger ajoute deux règles : affirmation **en brouillon** uniquement, et **pas d'extrait** pour une source sous licence (droit voisin). |
-| Résultat attendu | L'éditeur ajoute une preuve à un brouillon ; refus sur une affirmation publiée ; refus d'un extrait du Monde ; refus pour un compte sans rôle. |
+| Résultat attendu | L'éditeur ajoute une preuve à un brouillon ; refus sur une affirmation publiée ; refus d'un extrait d'une source sous licence (AFP Factuel, ou un média) ; refus pour un compte sans rôle. |
 | Tests | P12 × 4 |
 
 ```sql

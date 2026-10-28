@@ -24,7 +24,7 @@ insert into auth.users (id, email, raw_app_meta_data) values
 
 -- Un brouillon existe déjà (créé par le propriétaire de la base).
 insert into public.contenus (source_id, titre, url_originale)
-values ((select id from public.sources where nom = 'Le Monde'), 'Article de test fermé', 'https://www.lemonde.fr/test-ferme');
+values ((select id from public.sources where nom = 'INSEE'), 'Article de test fermé', 'https://www.lemonde.fr/test-ferme');
 select set_config('request.jwt.claims', '{"sub": "00000000-0000-0000-0000-0000000000f1"}', false);
 insert into public.affirmations (contenu_id, texte_affirmation)
 values ((select id from public.contenus where url_originale = 'https://www.lemonde.fr/test-ferme'), 'Brouillon secret qui ne doit jamais fuiter.');

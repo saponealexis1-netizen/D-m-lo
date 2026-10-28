@@ -61,7 +61,11 @@ select tests.verifier('v2 : RLS sur les 4 tables', (select bool_and(rowsecurity)
 select tests.verifier('v2 : pas de table profils', to_regclass('public.profils') is null);
 select tests.verifier('v2 : 4 clés étrangères entre tables métier',
   (select count(*) = 4 from pg_constraint where contype = 'f' and connamespace = 'public'::regnamespace and confrelid::regclass::text not like 'auth.%'));
-select tests.verifier('v2 : 28 sources de départ', (select count(*) = 28 from public.sources));
+select tests.verifier('v2 : 15 sources retenues par l''équipe', (select count(*) = 15 from public.sources));
+-- Médias de test (les vrais médias seront ajoutés avec l'import des articles).
+insert into public.sources (nom, type_source, url_base) values
+  ('Le Monde', 'media', 'https://www.lemonde.fr'), ('Le Figaro', 'media', 'https://www.lefigaro.fr'),
+  ('franceinfo', 'media', 'https://www.francetvinfo.fr');
 select tests.verifier('sécurité : rls_auto_enable() non exécutable par anon',
   not has_function_privilege('anon', 'public.rls_auto_enable()', 'execute'));
 select tests.verifier('sécurité : rls_auto_enable() non exécutable par authenticated',

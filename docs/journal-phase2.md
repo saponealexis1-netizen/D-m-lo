@@ -19,6 +19,13 @@ Aucune autre base n'a été touchée.
 
 Les fichiers de `supabase/migrations/` sont **identiques à l'octet près** au SQL enregistré par Supabase (md5 comparés : `24f2298a…`, `951b42b3…`, `8c689439…`).
 
+## 2 bis. Sources retenues par l'équipe
+| Version | Nom | Résultat |
+|---|---|---|
+| `20261028155725` | `v2_04_sources_retenues` | ✅ 13 sources supprimées (9 médias, Les Décodeurs, CheckNews, Vrai ou faux, Les Surligneurs), sans dépendance (0 contenu, 0 preuve). **15 sources restantes** : INSEE, Eurostat, DARES, DREES, Banque de France, SSMSI (statistique) ; Légifrance, Conseil constitutionnel (juridique) ; Assemblée nationale, Sénat, Cour des comptes, HATVP, Vie-publique.fr, Viginum (institution) ; AFP Factuel (fact-checking, lien seulement). Toujours fermées aux clients |
+
+⚠ Chaque article (`contenus.source_id`) doit être rattaché à son média : les médias seront ajoutés dans `sources` (type `media`) au moment de l'import des 500 articles.
+
 ## 3. Fermeture des accès (vérifiée sur le projet réel)
 - `has_table_privilege` : **aucun** droit select / insert / update / delete pour `anon` et `authenticated`, sur les 4 tables, la vue et les tables archivées.
 - Essais réels avec changement de rôle (transactions annulées) :

@@ -90,7 +90,7 @@ declare
   ed  uuid := (select id from auth.users where email = 'editeur@demelo.test');
   rel uuid := (select id from auth.users where email = 'relecteur@demelo.test');
   vis uuid := (select id from auth.users where email = 'visiteur@demelo.test');
-  s_monde bigint := (select id from public.sources where nom = 'Le Monde');
+  s_media bigint;
   s_insee bigint := (select id from public.sources where nom = 'INSEE');
   s_inactive bigint; c_visible bigint; c_masque bigint;
   a_brouillon bigint; a_relecture bigint; a_publiee bigint; a_rel_relecture bigint; a_rel_brouillon bigint;
@@ -106,12 +106,14 @@ begin
     -- Données de test (créées par le propriétaire, annulées à la fin).
     -- Les triggers de validation s'appliquent : on simule les bons JWT.
     -- -----------------------------------------------------------------
+    insert into public.sources (nom, type_source, url_base)
+    values ('[TEST] média sous licence', 'media', 'https://test.invalid/media') returning id into s_media;
     insert into public.sources (nom, type_source, url_base, active)
     values ('[TEST] source inactive', 'media', 'https://test.invalid', false) returning id into s_inactive;
     insert into public.contenus (source_id, titre, url_originale, lot_import)
-    values (s_monde, '[TEST] article visible', 'https://test.invalid/visible', 'test-rls') returning id into c_visible;
+    values (s_media, '[TEST] article visible', 'https://test.invalid/visible', 'test-rls') returning id into c_visible;
     insert into public.contenus (source_id, titre, url_originale, visible_public, lot_import)
-    values (s_monde, '[TEST] article masqué', 'https://test.invalid/masque', false, 'test-rls') returning id into c_masque;
+    values (s_media, '[TEST] article masqué', 'https://test.invalid/masque', false, 'test-rls') returning id into c_masque;
 
     perform set_config('request.jwt.claims', json_build_object('sub', ed, 'role', 'authenticated',
       'app_metadata', json_build_object('role_equipe', 'editeur'))::text, true);
@@ -147,7 +149,7 @@ begin
     -- Table sources (P1 à P3, G1)
     -- -----------------------------------------------------------------
     r := r || pg_temp.essai('P1', 'anon voit une source active', 'anon', '=1',
-      format('select 1 from public.sources where id = %s', s_monde));
+      format('select 1 from public.sources where id = %s', s_media));
     r := r || pg_temp.essai('P1', 'anon ne voit pas une source inactive', 'anon', '=0',
       format('select 1 from public.sources where id = %s', s_inactive));
     r := r || pg_temp.essai('P1', 'éditeur voit la source inactive', 'editeur@demelo.test', '=1',
@@ -159,7 +161,7 @@ begin
     r := r || pg_temp.essai('P3', 'éditeur modifie une source', 'editeur@demelo.test', '=1',
       format('update public.sources set licence_info = licence_info where id = %s', s_inactive));
     r := r || pg_temp.essai('P3', 'compte sans rôle : modification bloquée', 'visiteur@demelo.test', 'bloque',
-      format('update public.sources set licence_info = %L where id = %s', 'piraté', s_monde));
+      format('update public.sources set licence_info = %L where id = %s', 'piraté', s_media));
     r := r || pg_temp.essai('G1', 'anon : écriture interdite (pas de GRANT)', 'anon', 'refus_droit',
       $q$ insert into public.sources (nom, type_source, url_base) values ('[TEST] anon', 'media', 'https://test.invalid/a') $q$);
     r := r || pg_temp.essai('G1', 'éditeur : suppression interdite (pas de GRANT)', 'editeur@demelo.test', 'refus_droit',
@@ -175,9 +177,9 @@ begin
     r := r || pg_temp.essai('P4', 'éditeur voit l''article masqué', 'editeur@demelo.test', '=1',
       format('select 1 from public.contenus where id = %s', c_masque));
     r := r || pg_temp.essai('P5', 'éditeur indexe un article', 'editeur@demelo.test', '=1',
-      format('insert into public.contenus (source_id, titre, url_originale) values (%s, %L, %L)', s_monde, '[TEST] nouvel article', 'https://test.invalid/nouveau'));
+      format('insert into public.contenus (source_id, titre, url_originale) values (%s, %L, %L)', s_media, '[TEST] nouvel article', 'https://test.invalid/nouveau'));
     r := r || pg_temp.essai('P5', 'compte sans rôle : indexation bloquée', 'visiteur@demelo.test', 'bloque',
-      format('insert into public.contenus (source_id, titre, url_originale) values (%s, %L, %L)', s_monde, '[TEST] pirate', 'https://test.invalid/pirate'));
+      format('insert into public.contenus (source_id, titre, url_originale) values (%s, %L, %L)', s_media, '[TEST] pirate', 'https://test.invalid/pirate'));
     r := r || pg_temp.essai('P6', 'éditeur modifie un article', 'editeur@demelo.test', '=1',
       format('update public.contenus set theme = %L where id = %s', 'institutions', c_visible));
     r := r || pg_temp.essai('P6', 'compte sans rôle : modification bloquée', 'visiteur@demelo.test', 'bloque',
@@ -251,7 +253,7 @@ begin
              a_publiee, s_insee, 'https://test.invalid/preuve-3', 'confirme', ed));
     r := r || pg_temp.essai('P12', 'extrait d''une source sous licence bloqué', 'editeur@demelo.test', 'bloque',
       format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, extrait, ajoutee_par) values (%s, %s, %L, %L, %L, %L)',
-             a_brouillon, s_monde, 'https://test.invalid/preuve-4', 'confirme', 'Texte copié', ed));
+             a_brouillon, s_media, 'https://test.invalid/preuve-4', 'confirme', 'Texte copié', ed));
     r := r || pg_temp.essai('P12', 'compte sans rôle : ajout de preuve bloqué', 'visiteur@demelo.test', 'bloque',
       format('insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation, ajoutee_par) values (%s, %s, %L, %L, %L)',
              a_brouillon, s_insee, 'https://test.invalid/preuve-5', 'confirme', vis));

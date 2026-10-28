@@ -81,14 +81,17 @@ set role authenticated;
 insert into public.contenus (source_id, format, titre, url_originale, theme)
 values ((select id from public.sources where nom = 'Le Monde'), 'article', 'Budget 2027 : ce que prévoit le projet de loi',
         'https://www.lemonde.fr/article-budget', 'economie');
-insert into public.contenus (source_id, format, titre, url_originale, identifiant_externe, transcription_disponible)
-values ((select id from public.sources where nom = 'franceinfo'), 'youtube', 'Débat sur le chômage des jeunes',
-        'https://www.youtube.com/watch?v=abc123', 'abc123', true);
+insert into public.contenus (source_id, titre, url_originale, identifiant_externe)
+values ((select id from public.sources where nom = 'franceinfo'), 'Chômage des jeunes : les chiffres du trimestre',
+        'https://www.francetvinfo.fr/chomage-jeunes', 'guid-rss-123');
 insert into public.contenus (source_id, format, titre, url_originale, visible_public)
 values ((select id from public.sources where nom = 'Le Figaro'), 'article', 'Contenu masqué', 'https://www.lefigaro.fr/masque', false);
-select tests.doit_echouer('contenu : vidéo YouTube sans identifiant refusée',
+select tests.doit_echouer('contenu : format hors MVP (vidéo) refusé',
   $$ insert into public.contenus (source_id, format, titre, url_originale)
-     values ((select id from public.sources where nom = 'franceinfo'), 'youtube', 'Sans ID', 'https://www.youtube.com/watch?v=x') $$);
+     values ((select id from public.sources where nom = 'franceinfo'), 'video', 'Vidéo', 'https://www.francetvinfo.fr/video') $$);
+select tests.doit_echouer('contenu : même GUID RSS deux fois pour une source refusé',
+  $$ insert into public.contenus (source_id, titre, url_originale, identifiant_externe)
+     values ((select id from public.sources where nom = 'franceinfo'), 'Doublon GUID', 'https://www.francetvinfo.fr/autre', 'guid-rss-123') $$);
 select tests.doit_echouer('contenu : URL en double refusée',
   $$ insert into public.contenus (source_id, format, titre, url_originale)
      values ((select id from public.sources where nom = 'Le Monde'), 'article', 'Doublon', 'https://www.lemonde.fr/article-budget') $$);
@@ -124,15 +127,15 @@ select tests.session('00000000-0000-0000-0000-0000000000a1', 'editeur');
 set role authenticated;
 select tests.doit_echouer('création directement publiée refusée',
   $$ insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication, statut_workflow, created_by)
-     values (1, 'Le déficit public atteindra 5 % du PIB.', 'vrai', 'Explication', 'publie', '00000000-0000-0000-0000-0000000000a1') $$);
+     values ((select id from public.contenus where url_originale = 'https://www.lemonde.fr/article-budget'), 'Le déficit public atteindra 5 % du PIB.', 'vrai', 'Explication', 'publie', '00000000-0000-0000-0000-0000000000a1') $$);
 -- Usurpation d'auteur : le trigger remplace created_by par l'utilisateur connecté.
 insert into public.affirmations (contenu_id, texte_affirmation, created_by)
-values (1, 'Tentative d''usurpation de l''auteur.', '00000000-0000-0000-0000-0000000000b2');
+values ((select id from public.contenus where url_originale = 'https://www.lemonde.fr/article-budget'), 'Tentative d''usurpation de l''auteur.', '00000000-0000-0000-0000-0000000000b2');
 select tests.verifier('création au nom d''un autre : auteur forcé à l''utilisateur connecté',
   (select created_by = '00000000-0000-0000-0000-0000000000a1' from public.affirmations where texte_affirmation like 'Tentative%'));
 delete from public.affirmations where texte_affirmation like 'Tentative%';
 insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication)
-values (1, 'Le déficit public atteindra 5,4 % du PIB en 2026.', 'vrai', 'Le chiffre figure dans le projet de loi de finances.');
+values ((select id from public.contenus where url_originale = 'https://www.lemonde.fr/article-budget'), 'Le déficit public atteindra 5,4 % du PIB en 2026.', 'vrai', 'Le chiffre figure dans le projet de loi de finances.');
 select tests.doit_echouer('envoi en relecture sans preuve refusé',
   $$ update public.affirmations set statut_workflow = 'en_relecture' where id = (select id from public.affirmations where texte_affirmation like 'Le déficit%') $$);
 select tests.doit_echouer('extrait d''une source sous licence refusé',
@@ -191,8 +194,8 @@ reset role;
 -- Un relecteur ne valide pas sa propre affirmation.
 select tests.session('00000000-0000-0000-0000-0000000000b2', 'relecteur');
 set role authenticated;
-insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication, minutage_secondes)
-values (2, 'Le chômage des 15-24 ans a baissé en un an.', 'faux', 'Les données INSEE montrent une hausse.', 95);
+insert into public.affirmations (contenu_id, texte_affirmation, verdict, explication)
+values ((select id from public.contenus where url_originale = 'https://www.francetvinfo.fr/chomage-jeunes'), 'Le chômage des 15-24 ans a baissé en un an.', 'faux', 'Les données INSEE montrent une hausse.');
 insert into public.preuves (affirmation_id, source_id, url_preuve, type_relation)
 values ((select id from public.affirmations where texte_affirmation like 'Le chômage%'), (select id from public.sources where nom = 'INSEE'), 'https://www.insee.fr/chomage-t2', 'contredit');
 update public.affirmations set statut_workflow = 'en_relecture' where id = (select id from public.affirmations where texte_affirmation like 'Le chômage%');
@@ -202,7 +205,7 @@ reset role;
 select tests.session('00000000-0000-0000-0000-0000000000c3', 'relecteur');
 set role authenticated;
 update public.affirmations set statut_workflow = 'publie' where id = (select id from public.affirmations where texte_affirmation like 'Le chômage%');
-select tests.verifier('vidéo : publication par un autre relecteur acceptée', (select statut_workflow = 'publie' from public.affirmations where id = (select id from public.affirmations where texte_affirmation like 'Le chômage%')));
+select tests.verifier('2e article : publication par un autre relecteur acceptée', (select statut_workflow = 'publie' from public.affirmations where id = (select id from public.affirmations where texte_affirmation like 'Le chômage%')));
 reset role;
 
 -- ---------------------------------------------------------------------
@@ -215,7 +218,7 @@ select tests.doit_echouer('publié : texte figé', $$ update public.affirmations
 select tests.doit_echouer('publié : suppression refusée', $$ delete from public.affirmations where id = (select id from public.affirmations where texte_affirmation like 'Le déficit%') $$, true);
 select tests.doit_echouer('éditeur : dépublication refusée', $$ update public.affirmations set statut_workflow = 'brouillon' where id = (select id from public.affirmations where texte_affirmation like 'Le déficit%') $$);
 -- Brouillon non publié, pour vérifier qu'il reste invisible.
-insert into public.affirmations (contenu_id, texte_affirmation) values (1, 'Brouillon qui ne doit pas être visible.');
+insert into public.affirmations (contenu_id, texte_affirmation) values ((select id from public.contenus where url_originale = 'https://www.lemonde.fr/article-budget'), 'Brouillon qui ne doit pas être visible.');
 reset role;
 
 select set_config('request.jwt.claims', '{"role": "anon"}', false);  -- JWT de la clé publique

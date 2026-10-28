@@ -4,9 +4,8 @@
 -- =====================================================================
 --  9 médias + 19 organismes de la v1 (sauvegarde/2026-10-28_schema_v1/)
 --  deviennent 28 lignes de `sources`. Collecte 'manuel' par défaut : les flux
---  RSS et les chaînes YouTube seront renseignés après vérification.
---  À compléter par l'équipe : chaînes YouTube (type 'chaine_youtube',
---  mode 'api_youtube', identifiant_externe = ID de la chaîne).
+--  RSS seront renseignés (mode 'rss', flux_url) après vérification.
+--  Exécuté par le propriétaire de la base : non concerné par la RLS.
 -- =====================================================================
 
 insert into public.sources (nom, type_source, url_base, reutilisation) values

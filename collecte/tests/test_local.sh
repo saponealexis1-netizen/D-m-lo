@@ -39,6 +39,7 @@ cat > "$TMP/flux1.json" <<JSON
 { "flux": [
   { "media": "Le Monde",   "url": "http://127.0.0.1:$PORT/lemonde.xml",  "domaine": "lemonde.fr" },
   { "media": "20 Minutes", "url": "http://127.0.0.1:$PORT/atom.xml",     "domaine": "20minutes.fr" },
+  { "media": "Le Parisien", "url": "http://127.0.0.1:$PORT/leparisien.xml", "domaine": "leparisien.fr" },
   { "media": "Cassé",      "url": "http://127.0.0.1:$PORT/errone.xml",   "domaine": "exemple.fr" },
   { "media": "Absent",     "url": "http://127.0.0.1:$PORT/absent.xml",   "domaine": "exemple.fr" }
 ] }
@@ -62,20 +63,22 @@ DEMELO_DATABASE_URL="$URL_PIPELINE" DEMELO_DB_SSL=desactive DEMELO_FLUX_FICHIER=
 echo "— Contrôles"
 verifier() { if [ "$(valeur "$2")" = "t" ]; then echo "OK   $1"; else echo "ÉCHEC $1"; ECHECS=$((ECHECS+1)); fi; }
 ECHECS=0
-verifier "semaine 1 : 4 articles réels (2 Le Monde + 2 Atom), pas l'externe, pas le .invalid, pas le doublon, pas le sans-titre" \
-  "select count(*) = 4 from public.contenus where not est_test and lot_import like 'rss-%' and date_collecte < (select min(vu_le) from public.contenus where url_originale like '%nouveau_3%')"
-verifier "semaine 2 : 1 seul nouvel article, total 5, aucun supprimé" "select count(*) = 5 from public.contenus where not est_test"
+verifier "semaine 1 : 6 articles réels (2 Le Monde + 2 Atom + 2 Le Parisien), pas l'externe, pas le .invalid, pas le doublon, pas le sans-titre" \
+  "select count(*) = 6 from public.contenus where not est_test and lot_import like 'rss-%' and date_collecte < (select min(vu_le) from public.contenus where url_originale like '%nouveau_3%')"
+verifier "semaine 2 : 1 seul nouvel article, total 7, aucun supprimé" "select count(*) = 7 from public.contenus where not est_test"
 verifier "URL canonique : paramètres utm/xtor et ancre retirés" \
   "select bool_and(url_originale !~ '(utm_|xtor|#)') and count(*) filter (where url_originale = 'https://www.lemonde.fr/politique/article/2026/10/27/budget_1.html') = 1 from public.contenus"
 verifier "articles déjà connus : vu_le mis à jour, titre et date de collecte conservés" \
   "select vu_le > '$vu1'::timestamptz and date_collecte < vu_le from public.contenus where url_originale like '%budget_1%'"
 verifier "nouveaux articles non vérifiés et rattachés à leur média, pas à un organisme" \
-  "select bool_and(statut_traitement = 'non_traite' and source_id is null and media_nom in ('Le Monde', '20 Minutes')) from public.contenus where not est_test"
+  "select bool_and(statut_traitement = 'non_traite' and source_id is null and media_nom in ('Le Monde', '20 Minutes', 'Le Parisien')) from public.contenus where not est_test"
 verifier "titre décodé (apostrophe typographique)" "select exists (select 1 from public.contenus where titre = 'Budget 2027 : l’Assemblée adopte la première partie')"
-verifier "dates de publication enregistrées (RSS et Atom)" "select count(*) = 5 from public.contenus where not est_test and date_publication is not null"
+verifier "dates de publication enregistrées (RSS et Atom)" "select count(*) = 5 from public.contenus where not est_test and media_nom <> 'Le Parisien' and date_publication is not null"
+verifier "Le Parisien : date lue dans l'adresse, sinon laissée vide (jamais inventée)" \
+  "select count(*) filter (where (date_publication at time zone 'Europe/Paris')::date = '2026-10-28') = 1 and count(*) filter (where date_publication is null) = 1 from public.contenus where media_nom = 'Le Parisien'"
 verifier "donnée fictive jamais modifiée" "select vu_le = '2026-01-01'::timestamptz from public.contenus where est_test"
 verifier "aucune affirmation créée (collecte indépendante du fact-checking)" "select count(*) = 0 from public.affirmations"
-if node -e "const r=require('$TMP/rapport1.json'); const e=r.flux.filter(f=>f.statut==='erreur').map(f=>f.media).sort().join(','); process.exit(e==='Absent,Cassé' && r.total_nouveaux===4 ? 0 : 1)"; then
-  echo "OK   rapport : 2 flux en erreur tracés (HTTP 404, XML invalide), 4 nouveaux articles"; else echo "ÉCHEC rapport"; ECHECS=$((ECHECS+1)); fi
+if node -e "const r=require('$TMP/rapport1.json'); const e=r.flux.filter(f=>f.statut==='erreur').map(f=>f.media).sort().join(','); process.exit(e==='Absent,Cassé' && r.total_nouveaux===6 ? 0 : 1)"; then
+  echo "OK   rapport : 2 flux en erreur tracés (HTTP 404, XML invalide), 6 nouveaux articles"; else echo "ÉCHEC rapport"; ECHECS=$((ECHECS+1)); fi
 if [ "$ECHECS" -ne 0 ]; then echo "$ECHECS contrôle(s) en échec"; exit 1; fi
 echo "Tous les contrôles sont réussis."

@@ -109,6 +109,16 @@ function domaineDeBase(hote) {
   return hote.toLowerCase().replace(/^www\./, "").split(".").slice(-2).join(".");
 }
 
+// Flux sans date (Le Parisien) : la date figure dans l'adresse, « …-28-10-2026-… ».
+// Seul le jour est connu : on retient midi UTC, qui reste le bon jour à Paris.
+export function dateDansUrl(url) {
+  const m = new URL(url).pathname.match(/-(\d{2})-(\d{2})-(20\d{2})-/);
+  if (!m) return null;
+  const d = new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]), 12));
+  const valide = d.getUTCDate() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d <= new Date(Date.now() + 864e5);
+  return valide ? d.toISOString() : null;
+}
+
 export function preparerArticles(items, flux, lot) {
   // `domaine` (facultatif) : domaine des articles quand il diffère de celui du flux.
   const base = flux.domaine ?? domaineDeBase(new URL(flux.url).hostname);
@@ -134,7 +144,7 @@ export function preparerArticles(items, flux, lot) {
       url_originale: url,
       titre: it.titre.slice(0, 500),
       identifiant_externe: (it.guid ?? url).slice(0, 500),
-      date_publication: date && !isNaN(date) ? date.toISOString() : null,
+      date_publication: date && !isNaN(date) ? date.toISOString() : dateDansUrl(url),
       lot_import: lot,
     });
     if (articles.length >= MAX_PAR_FLUX) { plafond = items.indexOf(it) < items.length - 1; break; }

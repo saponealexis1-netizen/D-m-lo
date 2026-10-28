@@ -19,7 +19,7 @@
 begin;
 
 create schema archive_v1;
-comment on schema archive_v1 is 'Schéma Démêlo v1 archivé le <date d''application>. Non exposé par l''API.';
+comment on schema archive_v1 is 'Schéma Démêlo v1 archivé le 2026-10-28. Non exposé par l''API.';
 
 -- 1. Ce qui dépend de auth.users ou s'exécute seul
 drop trigger if exists apres_creation_utilisateur on auth.users;

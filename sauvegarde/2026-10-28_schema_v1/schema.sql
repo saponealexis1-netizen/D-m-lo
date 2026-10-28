@@ -600,6 +600,11 @@ grant select, update on public.profils to authenticated;
 --   traiter_signalement, verifier_sources_avant_publication : postgres uniquement
 --   est_admin, est_anonyme, est_editeur, questions_restantes,
 --   rechercher_sources, role_courant, rls_auto_enable : PUBLIC (défaut)
+-- Pour reproduire exactement ces droits en cas de reconstruction complète :
+revoke execute on function
+  public.controler_source(), public.creer_profil(), public.proteger_sources_publiees(),
+  public.traiter_signalement(), public.verifier_sources_avant_publication()
+from public, anon, authenticated;
 
 
 -- ---------------------------------------------------------------------

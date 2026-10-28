@@ -1,6 +1,6 @@
 # Plan de reconstruction Démêlo v2 (MVP)
 
-> **Statut : préparation uniquement.** Rien n'a été appliqué sur Supabase : la v1 n'est pas archivée et ses policies sont intactes. Chaque étape marquée 🔒 attend une validation explicite de l'équipe.
+> **Statut au 28/10/2026 : étapes 0 à 4 réalisées** (v1 archivée, v2 créée et fermée, 28 sources), voir `docs/journal-phase2.md`. Prochaine étape : 5 (Auth), puis 6 (RLS manuelles). Chaque étape marquée 🔒 attend une validation explicite de l'équipe.
 
 ## Périmètre du MVP (ajusté le 28/10/2026)
 - **Priorité absolue : 500 articles politiques réels indexés et 3 à 5 vérifications rigoureuses.**

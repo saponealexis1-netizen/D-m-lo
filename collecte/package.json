@@ -1,0 +1,16 @@
+{
+  "name": "demelo-collecte",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Collecte hebdomadaire des articles politiques (flux RSS) pour Démêlo",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "collecte": "node collecte.mjs",
+    "essai": "node collecte.mjs --essai"
+  },
+  "dependencies": {
+    "fast-xml-parser": "4.5.3",
+    "pg": "8.13.1"
+  }
+}

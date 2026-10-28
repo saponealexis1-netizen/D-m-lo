@@ -1,0 +1,89 @@
+# Collecte hebdomadaire des articles politiques (flux RSS) — Démêlo
+#
+# * Chaque lundi à 9 h, heure de Paris, et à la demande (onglet Actions > Run workflow).
+# * Aucun appel à Claude : la collecte est indépendante du fact-checking.
+# * Écrit dans Supabase avec le rôle Postgres demelo_pipeline (moindre privilège, aucune suppression).
+# * Les tâches planifiées ne s'exécutent que si ce fichier est sur la branche par défaut (main).
+#
+# Secrets à créer (Settings > Secrets and variables > Actions) :
+#   DEMELO_DATABASE_URL   chaîne de connexion du pooler Supabase, utilisateur demelo_pipeline.<ref>
+#   DEMELO_DB_CA          certificat CA Supabase (Database Settings > SSL Configuration)
+
+name: Collecte hebdomadaire des articles
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "collecte (écrit dans Supabase) ou essai (lecture des flux seulement)"
+        type: choice
+        options: [collecte, essai]
+        default: collecte
+  schedule:
+    # Cron GitHub = UTC. Lundi 9 h à Paris = 8 h UTC en hiver, 7 h UTC en été :
+    # deux déclenchements, et l'étape « heure » ne garde que celui qui tombe à 9 h à Paris.
+    - cron: "0 7 * * 1"
+    - cron: "0 8 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collecte-hebdo
+  cancel-in-progress: false
+
+jobs:
+  collecte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: collecte
+    steps:
+      - name: Vérifier l'heure de Paris (tâche planifiée)
+        id: heure
+        working-directory: .
+        run: |
+          heure=$(TZ=Europe/Paris date +%H)
+          echo "Heure de Paris : ${heure}h"
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$heure" != "09" ]; then
+            echo "lancer=non" >> "$GITHUB_OUTPUT"
+            echo "Déclenchement hors 9 h à Paris (changement d'heure) : ignoré."
+          else
+            echo "lancer=oui" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.heure.outputs.lancer == 'oui'
+
+      - uses: actions/setup-node@v4
+        if: steps.heure.outputs.lancer == 'oui'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: collecte/package-lock.json
+
+      - name: Installer les dépendances
+        if: steps.heure.outputs.lancer == 'oui'
+        run: npm ci --no-audit --no-fund
+
+      - name: Collecter
+        if: steps.heure.outputs.lancer == 'oui'
+        env:
+          DEMELO_DATABASE_URL: ${{ secrets.DEMELO_DATABASE_URL }}
+          DEMELO_DB_CA: ${{ secrets.DEMELO_DB_CA }}
+        run: |
+          if [ "${{ inputs.mode }}" = "essai" ]; then
+            node collecte.mjs --essai
+          else
+            node collecte.mjs
+          fi
+
+      - name: Conserver le rapport
+        if: always() && steps.heure.outputs.lancer == 'oui'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport-collecte
+          path: collecte/rapport-collecte.json
+          retention-days: 90
+          if-no-files-found: ignore

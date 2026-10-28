@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel><title>Politique</title>
+<item><title><![CDATA[Budget 2027 : l&#8217;Assemblée adopte la première partie]]></title>
+  <link>https://www.lemonde.fr/politique/article/2026/10/27/budget_1.html?utm_source=rss&amp;utm_medium=flux&amp;xtor=RSS-1</link>
+  <guid isPermaLink="true">https://www.lemonde.fr/politique/article/2026/10/27/budget_1.html</guid>
+  <pubDate>Tue, 27 Oct 2026 18:30:00 +0100</pubDate></item>
+<item><title>Réforme des retraites : ce que change le décret</title>
+  <link>https://www.lemonde.fr/politique/article/2026/10/26/retraites_2.html#commentaires</link>
+  <pubDate>Mon, 26 Oct 2026 09:00:00 +0100</pubDate></item>
+<item><title>Lien externe glissé dans le flux</title><link>https://exemple-externe.com/article</link></item>
+<item><title>Lien réservé aux données fictives</title><link>https://media.invalid/faux</link></item>
+<item><title>Doublon du premier article</title><link>https://www.lemonde.fr/politique/article/2026/10/27/budget_1.html</link></item>
+<item><title>  </title><link>https://www.lemonde.fr/politique/sans-titre.html</link></item>
+</channel></rss>

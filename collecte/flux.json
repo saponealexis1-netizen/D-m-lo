@@ -1,0 +1,12 @@
+{
+  "_commentaire": "Flux RSS publics des rubriques politiques. On ne conserve que le titre, le lien et la date (droit voisin). Ces médias sont les ORIGINES des articles, pas des sources de preuve (les 15 organismes sont dans la table sources). Un flux qui échoue est signalé dans le rapport sans bloquer les autres.",
+  "flux": [
+    { "media": "Le Monde",    "url": "https://www.lemonde.fr/politique/rss_full.xml" },
+    { "media": "franceinfo",  "url": "https://www.francetvinfo.fr/politique.rss" },
+    { "media": "Le Figaro",   "url": "https://www.lefigaro.fr/rss/figaro_politique.xml" },
+    { "media": "Libération",  "url": "https://www.liberation.fr/arc/outboundfeeds/rss-all/category/politique/?outputType=xml" },
+    { "media": "20 Minutes",  "url": "https://www.20minutes.fr/feeds/rss-politique.xml" },
+    { "media": "Le Parisien", "url": "https://feeds.leparisien.fr/leparisien/rss/politique" },
+    { "media": "BFMTV",       "url": "https://www.bfmtv.com/rss/politique/" }
+  ]
+}

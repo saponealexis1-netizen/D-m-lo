@@ -38,3 +38,21 @@ sql_editor ferme
 executer -f "$RACINE/supabase/rls_manuel/policies_et_grants.sql"
 sql_editor configure
 executer -f "$ICI/tests_v3_pipeline.sql"
+# Données fictives : 500 lignes, invisibles du public
+executer -o /dev/null -f "$RACINE/supabase/donnees/donnees_fictives.sql"
+executer -o /dev/null -f "$RACINE/supabase/donnees/donnees_fictives.sql"   # rejouable sans doublon
+psql -At -v ON_ERROR_STOP=1 <<'SQL'
+do $$ begin
+  if (select count(*) from public.contenus where est_test and lot_import = 'fictif-v1') <> 500 then
+    raise exception 'Données fictives : 500 lignes attendues.';
+  end if;
+end $$;
+select set_config('request.jwt.claims', '{"role": "anon"}', false);
+set role anon;
+do $$ begin
+  if exists (select 1 from public.contenus where est_test) or exists (select 1 from public.v_feed_verifie where domaine_origine like '%.invalid') then
+    raise exception 'Données fictives visibles du public.';
+  end if;
+  raise notice 'Données fictives : 500 lignes, rejouable, invisibles du public.';
+end $$;
+SQL

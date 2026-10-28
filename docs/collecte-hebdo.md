@@ -13,7 +13,7 @@ Le script `collecte/collecte.mjs`, lancé par le workflow `.github/workflows/col
 - **Erreurs** : un flux en erreur (HTTP, XML invalide) n'arrête pas les autres. Le job échoue seulement si **tous** les flux échouent.
 
 ## Mise en route (dans l'ordre)
-1. 🔒 **Appliquer la migration `v2_05`** (pipeline IA). Elle est nécessaire, car c'est elle qui ajoute `media_nom`, rend `source_id` facultatif et crée le rôle `demelo_pipeline`.
+1. ✅ **Migration `v2_05` appliquée** le 28/10/2026 (`supabase/migrations/20261028165254_v2_05_pipeline_ia.sql`). C'est elle qui ajoute `media_nom`, rend `source_id` facultatif et crée le rôle `demelo_pipeline`.
 2. 🔒 **Activer la connexion du rôle**, dans le SQL Editor, par un membre de l'équipe. Utilisez un mot de passe long et aléatoire, et n'enregistrez pas la requête comme snippet :
    ```sql
    alter role demelo_pipeline with login password 'MOT_DE_PASSE_ALEATOIRE';

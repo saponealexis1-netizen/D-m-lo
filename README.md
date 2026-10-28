@@ -7,7 +7,7 @@ Application web pédagogique pour les 18–25 ans : l'actualité politique fran�
 | Dossier | Contenu |
 |---|---|
 | `supabase/migrations/` | Migrations appliquées sur Supabase (4 tables métier : `sources`, `contenus`, `affirmations`, `preuves`) |
-| `supabase/brouillons/` | Migrations préparées, non appliquées (dont `v2_05_pipeline_ia.sql`) et tests locaux |
+| `supabase/brouillons/` | Brouillons commentés de v2_01 à v2_03 et tests locaux (les migrations appliquées sont dans `supabase/migrations/`) |
 | `supabase/rls_manuel/` | Policies RLS et GRANT à configurer **à la main** par l'équipe, et leurs tests |
 | `supabase/donnees/` | Données fictives identifiées (`est_test`) pour atteindre 500 lignes |
 | `collecte/` | Collecte hebdomadaire des articles (flux RSS) |

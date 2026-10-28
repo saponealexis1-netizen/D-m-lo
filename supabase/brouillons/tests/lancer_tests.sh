@@ -25,7 +25,7 @@ executer -f "$RACINE/supabase/brouillons/v2_01_archiver_v1.sql"
 executer -f "$RACINE/supabase/brouillons/v2_02_schema_cible.sql"
 executer -f "$RACINE/supabase/brouillons/v2_03_donnees_initiales.sql"
 executer -f "$RACINE/supabase/migrations/20261028155725_v2_04_sources_retenues.sql"
-executer -f "$RACINE/supabase/brouillons/v2_05_pipeline_ia.sql"
+executer -1 -f "$RACINE/supabase/migrations/20261028165254_v2_05_pipeline_ia.sql"
 # État 1 : base fermée, avant la configuration manuelle des RLS
 executer -f "$ICI/tests_base_fermee.sql"
 executer -f "$ICI/comptes_test_sql_editor.sql"

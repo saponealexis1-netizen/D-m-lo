@@ -24,7 +24,7 @@ sed -e 's/extensions\.vector(1024)/extensions.vector/g' -e '/USING hnsw/d' \
 executer -f "$RACINE/sauvegarde/2026-10-28_schema_v1/donnees_reference.sql" >/dev/null
 for f in "$RACINE/supabase/brouillons/v2_01_archiver_v1.sql" "$RACINE/supabase/brouillons/v2_02_schema_cible.sql" \
          "$RACINE/supabase/brouillons/v2_03_donnees_initiales.sql" "$RACINE/supabase/migrations/20261028155725_v2_04_sources_retenues.sql" \
-         "$RACINE/supabase/brouillons/v2_05_pipeline_ia.sql"; do
+         "$RACINE/supabase/migrations/20261028165254_v2_05_pipeline_ia.sql"; do
   executer -o /dev/null -f "$f"
 done
 executer -c "alter role demelo_pipeline login"

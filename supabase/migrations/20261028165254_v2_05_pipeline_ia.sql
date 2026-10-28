@@ -1,6 +1,5 @@
 -- =====================================================================
---  BROUILLON — NE PAS APPLIQUER SANS VALIDATION EXPLICITE
---  Démêlo v2, étape 5 : fact-checking automatisé par Claude
+--  Démêlo v2, étape 5 : fact-checking automatisé par Claude (appliquée le 28/10/2026)
 -- =====================================================================
 --  Modifie le schéma v2 en place (les 4 tables sont vides, sauf les 15 sources) :
 --  * le circuit éditeur / relecteur disparaît ; un pipeline serveur (rôle
@@ -22,7 +21,6 @@
 --  (supabase/rls_manuel/). Seuls les droits du rôle serveur `demelo_pipeline` sont ici.
 -- =====================================================================
 
-begin;
 
 -- ---------------------------------------------------------------------
 -- 0. Rôle technique du pipeline (moindre privilège)
@@ -652,5 +650,3 @@ create policy pipeline_affirmations on public.affirmations
   for all to demelo_pipeline using (true) with check (true);   -- le trigger 8.1 contrôle tout
 create policy pipeline_preuves on public.preuves
   for all to demelo_pipeline using (true) with check (true);   -- le trigger 8.2 contrôle tout
-
-commit;

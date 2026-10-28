@@ -25,6 +25,7 @@ truncate resultats_rls;
 -- Exécute une requête avec l'identité demandée et renvoie le résultat.
 --   qui     : 'anon' | 'service_role' | e-mail d'un compte de test
 --   attendu : '=N' (réussite, N lignes) | 'bloque' (erreur ou 0 ligne) | 'refus_droit' (pas de GRANT)
+--             | 'bloque_ou_refus' (bloqué par un trigger OU par l'absence de GRANT : les deux sont conformes)
 create or replace function pg_temp.essai(code text, test text, qui text, attendu text, requete text,
                                          anonyme boolean default false)
 returns jsonb
@@ -70,10 +71,10 @@ begin
   end;
 
   v_statut := case
-    when v_erreur like 'permission denied for%' and attendu = 'refus_droit' then '✅'
+    when v_erreur like 'permission denied for%' and attendu in ('refus_droit', 'bloque_ou_refus') then '✅'
     when v_erreur like 'permission denied for%' then '⏳'
     when attendu = 'refus_droit' then '❌'
-    when attendu = 'bloque' then case when v_erreur is not null or v_n = 0 then '✅' else '❌' end
+    when attendu in ('bloque', 'bloque_ou_refus') then case when v_erreur is not null or v_n = 0 then '✅' else '❌' end
     when v_erreur is not null then '❌'
     when v_n = substr(attendu, 2)::bigint then '✅'
     else '❌'
@@ -259,7 +260,7 @@ begin
     r := r || pg_temp.essai('W3', '« vrai » sans preuve primaire bloqué', 'admin@demelo.test', 'bloque',
       format('update public.affirmations set statut_analyse = %L, verdict = %L, explication = %L, limites = %L, modele_ia = %L, version_prompt = %L, analyse_le = now(), recoupement = pg_temp.recoupement(), revue_motif = %L where id = %s',
              'analyse_disponible', 'vrai', 'x', 'x', 'claude-opus-5-5', 't', 'x', a_cours));
-    r := r || pg_temp.essai('W4', 'clé service_role : aucune modification d''analyse', 'service_role', 'bloque',
+    r := r || pg_temp.essai('W4', 'clé service_role : aucune modification d''analyse', 'service_role', 'bloque_ou_refus',
       format('update public.affirmations set statut_analyse = %L, revue_motif = %L where id = %s', 'retire', 'x', a_abst));
     r := r || pg_temp.essai('W5', 'analyse publiée : explication figée', 'admin@demelo.test', 'bloque',
       format('update public.affirmations set explication = %L where id = %s', 'Réécrite', a_abst));

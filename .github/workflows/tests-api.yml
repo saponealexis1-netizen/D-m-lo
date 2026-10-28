@@ -1,0 +1,36 @@
+# Tests RLS de bout en bout via l'API Supabase, avec de vrais comptes (anonyme, sans rôle, admin).
+# Lancement manuel uniquement (Actions > Tests API Supabase > Run workflow).
+# Le script crée 1 article masqué, 1 donnée fictive et 1 affirmation « [TEST-API] » non publiée :
+# les supprimer ensuite avec supabase/rls_manuel/nettoyage_tests_api.sql.
+#
+# Secrets (Settings > Secrets and variables > Actions) — jamais la clé secrète :
+#   SUPABASE_PUBLISHABLE_KEY                       clé publique sb_publishable_…
+#   DEMELO_ADMIN_EMAIL / DEMELO_ADMIN_MDP          compte admin@demelo.test
+#   DEMELO_VISITEUR_EMAIL / DEMELO_VISITEUR_MDP    compte visiteur@demelo.test
+
+name: Tests API Supabase
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests RLS via l'API
+        env:
+          SUPABASE_URL: https://aoysmqeasnfnyvmfwktt.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          DEMELO_ADMIN_EMAIL: ${{ secrets.DEMELO_ADMIN_EMAIL }}
+          DEMELO_ADMIN_MDP: ${{ secrets.DEMELO_ADMIN_MDP }}
+          DEMELO_VISITEUR_EMAIL: ${{ secrets.DEMELO_VISITEUR_EMAIL }}
+          DEMELO_VISITEUR_MDP: ${{ secrets.DEMELO_VISITEUR_MDP }}
+        run: node supabase/rls_manuel/tests_api.mjs

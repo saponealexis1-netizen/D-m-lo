@@ -10,7 +10,7 @@ begin
   if v_etat = 'configure' and exists (select 1 from resultats_rls where statut <> '✅') then
     raise exception 'Après configuration, tout doit être ✅.';
   end if;
-  if v_etat = 'ferme' and exists (select 1 from resultats_rls where statut = '✅' and attendu not in ('bloque', 'refus_droit')) then
+  if v_etat = 'ferme' and exists (select 1 from resultats_rls where statut = '✅' and attendu not in ('bloque', 'refus_droit', 'bloque_ou_refus')) then
     raise exception 'Base fermée : aucun accès ne doit réussir.';
   end if;
   if (select count(*) from public.affirmations where texte_affirmation like '[TEST]%')

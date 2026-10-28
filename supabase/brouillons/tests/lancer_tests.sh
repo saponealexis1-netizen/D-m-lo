@@ -56,3 +56,5 @@ do $$ begin
   raise notice 'Données fictives : 500 lignes, rejouable, invisibles du public.';
 end $$;
 SQL
+# Requêtes envoyées par le site (web/)
+executer -o /dev/null -f "$ICI/tests_requetes_front.sql"

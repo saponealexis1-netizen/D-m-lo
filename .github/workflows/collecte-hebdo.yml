@@ -19,11 +19,8 @@ on:
         type: choice
         options: [collecte, essai]
         default: collecte
-  schedule:
-    # Cron GitHub = UTC. Lundi 9 h à Paris = 8 h UTC en hiver, 7 h UTC en été :
-    # deux déclenchements, et l'étape « heure » ne garde que celui qui tombe à 9 h à Paris.
-    - cron: "0 7 * * 1"
-    - cron: "0 8 * * 1"
+  # Collecte automatique du lundi désactivée le 29/10/2026 (fin du projet).
+  # Pour la réactiver : remettre le bloc schedule (crons "0 7 * * 1" et "0 8 * * 1").
 
 permissions:
   contents: read

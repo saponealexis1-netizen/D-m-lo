@@ -2,3 +2,4 @@ node_modules/
 rapport-collecte.json
 .env
 .env.*
+!.env.example

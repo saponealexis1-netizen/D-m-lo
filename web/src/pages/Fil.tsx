@@ -54,11 +54,19 @@ export default function Fil() {
 
   return (
     <section>
-      <h1>Les articles politiques de la semaine, démêlés</h1>
-      <p className="intro">
-        Articles collectés chaque semaine auprès des médias. Quand une affirmation a été vérifiée à partir des sources
-        officielles, l'analyse est disponible sur la fiche de l'article.
-      </p>
+      <header className="une">
+        <p className="surtitre">Présidentielle 2027 · L'édition de la semaine</p>
+        <h1>Les articles politiques de la semaine, <em>démêlés</em>.</h1>
+        <p className="intro">
+          Articles collectés chaque semaine auprès des médias. Quand une affirmation a été vérifiée à partir des sources
+          officielles, l'analyse est disponible sur la fiche de l'article.
+        </p>
+        <ul className="engagements">
+          <li><strong>I.</strong> Seuls des organismes publics servent de preuve, jamais les médias.</li>
+          <li><strong>II.</strong> Pas de preuve, pas de verdict : Démêlo s'abstient et explique pourquoi.</li>
+          <li><strong>III.</strong> Les cas sensibles sont relus par l'équipe avant publication.</li>
+        </ul>
+      </header>
 
       <form className="filtres" onSubmit={(e) => { e.preventDefault(); changer('q', recherche.trim()) }}>
         <input type="search" placeholder="Rechercher un titre…" value={recherche} onChange={(e) => setRecherche(e.target.value)} aria-label="Rechercher un titre" />
@@ -77,7 +85,7 @@ export default function Fil() {
 
       <ul className="liste">
         {articles.map((a) => (
-          <li key={a.id} className="carte">
+          <li key={a.id} className={`carte carte-article carte-${a.statut_verification}`}>
             <div className="meta">
               <span>{a.media_nom}</span>
               <span>{date(a.date_publication)}</span>
